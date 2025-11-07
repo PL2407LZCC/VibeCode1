@@ -2,15 +2,21 @@ services:
   api:
     build:
       context: ./server
-    command: npm run dev
+    command: sh -c "npm run prisma:generate && npm run dev"
     environment:
       NODE_ENV: development
       PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/vibecode1?schema=public
+      ADMIN_API_KEY: changeme-admin-key
     ports:
       - '3000:3000'
     volumes:
       - ./server:/usr/src/app
       - /usr/src/app/node_modules
+      - ./tsconfig.base.json:/usr/src/tsconfig.base.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
   web:
     build:
@@ -18,11 +24,34 @@ services:
     command: npm run dev -- --host 0.0.0.0 --port 5173
     environment:
       NODE_ENV: development
-      VITE_API_URL: http://localhost:3000
+      VITE_API_URL: http://api:3000
+      VITE_ADMIN_TOKEN: changeme-admin-key
     ports:
       - '5173:5173'
     volumes:
       - ./client:/usr/src/app
       - /usr/src/app/node_modules
+      - ./tsconfig.base.json:/usr/src/tsconfig.base.json:ro
     depends_on:
       - api
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vibecode1
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vibecode1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data: {}

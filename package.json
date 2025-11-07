@@ -10,6 +10,7 @@
   "scripts": {
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:server": "npm run test --workspace server",
     "build": "npm run build --workspaces --if-present",
     "format": "npm run format --workspaces --if-present"
   },
