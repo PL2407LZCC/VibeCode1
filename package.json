@@ -11,6 +11,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:server": "npm run test --workspace server",
+    "test:e2e": "playwright test",
     "build": "npm run build --workspaces --if-present",
     "format": "npm run format --workspaces --if-present"
   },
@@ -19,6 +20,7 @@
     "npm": ">=9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@typescript-eslint/parser": "^8.46.3"
   }
 }

@@ -44,7 +44,7 @@ This living plan breaks the build into milestones that unlock testable functiona
 - Tasks:
   1. [x] Implement authentication (e.g., simple password/token) and protected routes.
   2. [x] Build inventory CRUD, disable kiosk toggle, and analytics charts (daily/weekly sales).
-  3. Add end-to-end tests (Playwright/Cypress) for admin-critical paths.
+  3. [x] Add end-to-end tests (Playwright/Cypress) for admin-critical paths.
 - Verification: `npm run test:e2e` passes; manual review of analytics accuracy.
 
 ### Milestone 6 · Docker & CI Hardening
@@ -68,10 +68,10 @@ This living plan breaks the build into milestones that unlock testable functiona
 - [x] Milestone 2 · Backend API MVP
 - [x] Milestone 3 · Database Integration & Persistence
 - [x] Milestone 4 · Frontend MVP
-- [ ] Milestone 5 · Admin Dashboard & Inventory Controls
+- [x] Milestone 5 · Admin Dashboard & Inventory Controls
 - [ ] Milestone 6 · Docker & CI Hardening
 - [ ] Milestone 7 · Payment & QR Flow (Deferred)
 
 ## Working Notes
-- Current focus: Milestone 5 Task 3 (admin e2e coverage and critical path validation).
-- Next checkpoint: select E2E harness (Playwright/Cypress) and script admin flows before moving to Docker/CI hardening.
+- Current focus: Milestone 6 Task 1 (Docker production builds and separation of dev/prod compose targets).
+- Next checkpoint: finalize Dockerfiles for production-ready builds prior to introducing CI automation.
