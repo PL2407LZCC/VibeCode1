@@ -13,12 +13,7 @@ export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
 
         return (
           <article key={product.id} className="product-card">
-            <img
-              src={product.imageUrl}
-              alt={product.title}
-              loading="lazy"
-              className="product-card__image"
-            />
+            <img src={product.imageUrl} alt={product.title} loading="lazy" className="product-card__image" />
             <div className="product-card__body">
               <h2 className="product-card__title">{product.title}</h2>
               <p className="product-card__description">{product.description}</p>

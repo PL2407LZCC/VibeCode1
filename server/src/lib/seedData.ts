@@ -40,7 +40,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'Rich medium-roast coffee served hot or iced.',
       price: '2.50',
       inventoryCount: 54,
-      imageUrl: '/placeholder/coffee.png'
+      imageUrl: '/house-mix-coffee.jpeg'
     },
     {
       id: 'demo-energy',
@@ -48,7 +48,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'High-caffeine energy shot for late-night study sessions.',
       price: '3.00',
       inventoryCount: 40,
-      imageUrl: '/placeholder/energy.png'
+      imageUrl: '/lightning-energy-shot.jpeg'
     },
     {
       id: 'demo-sparkling',
@@ -56,7 +56,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'Refreshing sparkling water with natural citrus flavors.',
       price: '1.80',
       inventoryCount: 48,
-      imageUrl: '/placeholder/sparkling.png'
+      imageUrl: '/citrus-drink.jpeg'
     },
     {
       id: 'demo-protein',
@@ -64,7 +64,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'Ready-to-drink protein shake packed with 20g of protein.',
       price: '2.80',
       inventoryCount: 33,
-      imageUrl: '/placeholder/protein.png'
+      imageUrl: '/chocolate-protein-drink.jpeg'
     },
     {
       id: 'demo-trailmix',
@@ -72,7 +72,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'Roasted nuts, dried fruit, and dark chocolate chunks.',
       price: '2.20',
       inventoryCount: 49,
-      imageUrl: '/placeholder/trailmix.png'
+      imageUrl: '/trail-mix-snack-pack.jpeg'
     },
     {
       id: 'demo-sandwich',
@@ -80,7 +80,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       description: 'Grab-and-go sandwich with roasted turkey and fresh veggies.',
       price: '4.50',
       inventoryCount: 13,
-      imageUrl: '/placeholder/sandwich.png'
+      imageUrl: '/turkey-club-sandwich.jpeg'
     }
   ];
 
