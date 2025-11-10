@@ -43,7 +43,7 @@ This living plan breaks the build into milestones that unlock testable functiona
 - Goals: remote admin panel supporting inventory management and sales insights.
 - Tasks:
   1. [x] Implement authentication (e.g., simple password/token) and protected routes.
-  2. Build inventory CRUD, disable kiosk toggle, and analytics charts (daily/weekly sales).
+  2. [x] Build inventory CRUD, disable kiosk toggle, and analytics charts (daily/weekly sales).
   3. Add end-to-end tests (Playwright/Cypress) for admin-critical paths.
 - Verification: `npm run test:e2e` passes; manual review of analytics accuracy.
 
@@ -73,5 +73,5 @@ This living plan breaks the build into milestones that unlock testable functiona
 - [ ] Milestone 7 · Payment & QR Flow (Deferred)
 
 ## Working Notes
-- Current focus: Milestone 5 Task 2 (admin inventory CRUD + analytics endpoints/UI).
-- Next checkpoint: verify admin routes via dedicated tests + start frontend admin surface before moving to e2e coverage.
+- Current focus: Milestone 5 Task 3 (admin e2e coverage and critical path validation).
+- Next checkpoint: select E2E harness (Playwright/Cypress) and script admin flows before moving to Docker/CI hardening.

@@ -19,9 +19,9 @@ describe('AdminDashboard', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('VITE_ADMIN_TOKEN', '');
 
-  render(<AdminDashboard />);
+    render(<AdminDashboard />);
 
-  expect(screen.getByText(/admin token is not configured/i)).toBeTruthy();
+    expect(screen.getByText(/admin token is not configured/i)).toBeTruthy();
   });
 
   it('fetches admin data and creates a new product', async () => {
@@ -61,6 +61,10 @@ describe('AdminDashboard', () => {
       weekly: [
         { weekStart: '2025-10-13', total: 40, transactions: 5 },
         { weekStart: '2025-10-20', total: 52, transactions: 6 }
+      ],
+      topProducts: [
+        { productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 },
+        { productId: 'sparkling-water', title: 'Sparkling Water', quantity: 3, revenue: 8.4 }
       ]
     };
 
@@ -98,6 +102,14 @@ describe('AdminDashboard', () => {
         return createJsonResponse({ id: 'sparkling-water' }, 201);
       }
 
+      if (url.endsWith('/admin/products/demo-coffee') && method === 'DELETE') {
+        productsPayload = {
+          items: productsPayload.items.filter((item) => item.id !== 'demo-coffee')
+        };
+        statsPayload.topProducts = statsPayload.topProducts.filter((item) => item.productId !== 'demo-coffee');
+        return createJsonResponse({ id: 'demo-coffee', isActive: false });
+      }
+
       if (url.endsWith('/config')) {
         return createJsonResponse(configPayload);
       }
@@ -112,7 +124,7 @@ describe('AdminDashboard', () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText('Filter Coffee')).toBeTruthy();
+      expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);
     });
 
     expect(fetchMock.mock.calls.some(([, options]) => {
@@ -137,9 +149,115 @@ describe('AdminDashboard', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Sparkling Water')).toBeTruthy();
+      expect(screen.getAllByRole('heading', { level: 3, name: 'Sparkling Water' })).toHaveLength(1);
     });
 
     expect(screen.getByText(/product created successfully/i)).toBeTruthy();
+    expect(screen.getByText(/top products/i)).toBeTruthy();
+  });
+
+  it('archives a product from the catalog', async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('VITE_ADMIN_TOKEN', 'test-secret');
+
+    let productsPayload = {
+      items: [
+        {
+          id: 'demo-coffee',
+          title: 'Filter Coffee',
+          description: 'Fresh brew',
+          price: 2.5,
+          imageUrl: null,
+          inventoryCount: 5,
+          isActive: true,
+          createdAt: '2025-11-07T10:00:00.000Z',
+          updatedAt: '2025-11-07T10:00:00.000Z'
+        },
+        {
+          id: 'energy-drink',
+          title: 'Energy Drink',
+          description: 'Stay awake',
+          price: 3,
+          imageUrl: null,
+          inventoryCount: 12,
+          isActive: true,
+          createdAt: '2025-11-07T11:00:00.000Z',
+          updatedAt: '2025-11-07T11:00:00.000Z'
+        }
+      ]
+    };
+
+    const statsPayload = {
+      totalTransactions: 3,
+      totalRevenue: 42,
+      itemsSold: 9,
+      daily: [],
+      weekly: [],
+      topProducts: [{ productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 }]
+    };
+
+    const configPayload = {
+      currency: 'EUR',
+      paymentProvider: 'mobilepay',
+      inventoryEnabled: true
+    };
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/admin/products') && method === 'GET') {
+        return createJsonResponse(productsPayload);
+      }
+
+      if (url.endsWith('/admin/products/demo-coffee') && method === 'DELETE') {
+        productsPayload = {
+          items: productsPayload.items.filter((item) => item.id !== 'demo-coffee')
+        };
+        statsPayload.topProducts = statsPayload.topProducts.filter((item) => item.productId !== 'demo-coffee');
+        return createJsonResponse({ id: 'demo-coffee', isActive: false });
+      }
+
+      if (url.endsWith('/config')) {
+        return createJsonResponse(configPayload);
+      }
+
+      if (url.endsWith('/admin/stats/sales')) {
+        return createJsonResponse(statsPayload);
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);
+    });
+
+    const archiveButtons = screen.getAllByRole('button', { name: /archive/i });
+    await userEvent.click(archiveButtons[0]);
+
+    expect(confirmSpy).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/admin/products/demo-coffee'),
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { level: 3, name: 'Filter Coffee' })).toBeNull();
+    });
+
+    expect(screen.getByText(/archived/i)).toBeTruthy();
   });
 });

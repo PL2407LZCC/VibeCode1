@@ -41,4 +41,10 @@ export type SalesStats = {
   itemsSold: number;
   daily: Array<{ date: string } & SalesBucket>;
   weekly: Array<{ weekStart: string } & SalesBucket>;
+  topProducts: Array<{
+    productId: string;
+    title: string;
+    quantity: number;
+    revenue: number;
+  }>;
 };

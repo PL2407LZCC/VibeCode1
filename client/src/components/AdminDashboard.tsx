@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
 import type { AdminProduct } from '../types';
 
@@ -13,6 +13,7 @@ type AdminProductRowProps = {
   product: AdminProduct;
   onSave: (id: string, payload: AdminProductUpdatePayload) => Promise<void>;
   onStatus: (kind: StatusKind, text: string) => void;
+  onArchive: (product: AdminProduct) => void | Promise<void>;
   disabled?: boolean;
 };
 
@@ -44,8 +45,18 @@ const INITIAL_FORM: CreateFormState = {
 };
 
 export function AdminDashboard() {
-  const { products, config, stats, isLoading, error, createProduct, updateProduct, toggleInventory, refresh } =
-    useAdminDashboard();
+  const {
+    products,
+    config,
+    stats,
+    isLoading,
+    error,
+    createProduct,
+    updateProduct,
+    toggleInventory,
+    deleteProduct,
+    refresh
+  } = useAdminDashboard();
   const [formState, setFormState] = useState<CreateFormState>(INITIAL_FORM);
   const [status, setStatus] = useState<StatusMessage | null>(null);
 
@@ -105,6 +116,27 @@ export function AdminDashboard() {
     }
   };
 
+  const handleArchiveProduct = async (product: AdminProduct) => {
+    const confirmMessage = `Archive ${product.title}? This hides it from the kiosk and clears remaining stock.`;
+    const confirmed =
+      typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(confirmMessage)
+        : true;
+
+    if (!confirmed) {
+      return;
+    }
+
+    setStatus(null);
+
+    try {
+      await deleteProduct(product.id);
+      handleStatus('success', `${product.title} archived.`);
+    } catch (err) {
+      handleStatus('error', err instanceof Error ? err.message : 'Failed to archive product.');
+    }
+  };
+
   const handleRefresh = async () => {
     setStatus(null);
     await refresh();
@@ -122,6 +154,13 @@ export function AdminDashboard() {
       return 1;
     }
     return Math.max(...stats.weekly.map((bucket) => bucket.total), 1);
+  }, [stats]);
+
+  const topRevenueMax = useMemo(() => {
+    if (!stats || stats.topProducts.length === 0) {
+      return 1;
+    }
+    return Math.max(...stats.topProducts.map((item) => item.revenue), 1);
   }, [stats]);
 
   return (
@@ -235,9 +274,10 @@ export function AdminDashboard() {
             ) : (
               products.map((product) => (
                 <AdminProductRow
-                  key={product.id}
+                  key={`${product.id}-${product.updatedAt}`}
                   product={product}
                   onSave={updateProduct}
+                  onArchive={handleArchiveProduct}
                   onStatus={handleStatus}
                   disabled={isLoading}
                 />
@@ -310,6 +350,31 @@ export function AdminDashboard() {
                   </ul>
                 </div>
               </div>
+
+              <div className="admin-top-products">
+                <h3>Top products (30 days)</h3>
+                {stats.topProducts.length === 0 ? (
+                  <p className="admin-top-products__empty">No product sales yet.</p>
+                ) : (
+                  <ol className="admin-top-products__list">
+                    {stats.topProducts.map((item) => {
+                      const percentage = topRevenueMax === 0 ? 0 : Math.round((item.revenue / topRevenueMax) * 100);
+                      return (
+                        <li key={item.productId} className="admin-top-products__item">
+                          <div>
+                            <span className="admin-top-products__title">{item.title}</span>
+                            <span className="admin-top-products__subtitle">{item.quantity} sold</span>
+                          </div>
+                          <div className="admin-top-products__bar" aria-label={`${item.revenue.toFixed(2)} revenue`}>
+                            <span style={{ width: `${percentage}%` }} />
+                          </div>
+                          <span className="admin-top-products__value">€{item.revenue.toFixed(2)}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -318,7 +383,7 @@ export function AdminDashboard() {
   );
 }
 
-function AdminProductRow({ product, onSave, onStatus, disabled }: AdminProductRowProps) {
+function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: AdminProductRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formState, setFormState] = useState({
     title: product.title,
@@ -328,17 +393,6 @@ function AdminProductRow({ product, onSave, onStatus, disabled }: AdminProductRo
     inventoryCount: product.inventoryCount.toString(),
     isActive: product.isActive
   });
-
-  useEffect(() => {
-    setFormState({
-      title: product.title,
-      description: product.description,
-      price: product.price.toFixed(2),
-      imageUrl: product.imageUrl ?? '',
-      inventoryCount: product.inventoryCount.toString(),
-      isActive: product.isActive
-    });
-  }, [product.id, product.title, product.description, product.price, product.imageUrl, product.inventoryCount, product.isActive]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -387,14 +441,24 @@ function AdminProductRow({ product, onSave, onStatus, disabled }: AdminProductRo
             {product.isActive ? 'Active' : 'Hidden'} · {product.inventoryCount} in stock
           </p>
         </div>
-        <button
-          type="button"
-          className="admin-button admin-button--ghost"
-          onClick={() => setIsEditing((prev) => !prev)}
-          disabled={disabled}
-        >
-          {isEditing ? 'Cancel' : 'Edit'}
-        </button>
+        <div className="admin-product__actions">
+          <button
+            type="button"
+            className="admin-button admin-button--ghost"
+            onClick={() => setIsEditing((prev) => !prev)}
+            disabled={disabled}
+          >
+            {isEditing ? 'Cancel' : 'Edit'}
+          </button>
+          <button
+            type="button"
+            className="admin-button admin-button--danger"
+            onClick={() => void onArchive(product)}
+            disabled={disabled}
+          >
+            Archive
+          </button>
+        </div>
       </header>
 
       {isEditing ? (

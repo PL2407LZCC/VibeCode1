@@ -6,7 +6,8 @@ import {
   listAllProducts,
   createProduct,
   updateProduct,
-  updateProductInventory
+  updateProductInventory,
+  archiveProduct
 } from './repositories/productRepository';
 import { getKioskConfig, setInventoryEnabled } from './repositories/settingsRepository';
 import prisma from './lib/prisma';
@@ -296,6 +297,25 @@ adminRouter.patch('/products/:id/inventory', async (req: Request, res: Response)
   }
 });
 
+adminRouter.delete('/products/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ message: 'Product id is required.' });
+  }
+
+  try {
+    const product = await archiveProduct(id);
+    res.json(product);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Record to update')) {
+      return res.status(404).json({ message: `Product ${id} not found.` });
+    }
+
+    res.status(500).json({ message: 'Unable to archive product.' });
+  }
+});
+
 adminRouter.patch('/kiosk-mode', async (req: Request, res: Response) => {
   const { inventoryEnabled } = req.body as { inventoryEnabled?: unknown };
 
@@ -321,7 +341,10 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
     const weeklyWindowStart = startOfIsoWeek(new Date(now));
     weeklyWindowStart.setUTCDate(weeklyWindowStart.getUTCDate() - 21);
 
-    const [purchaseAggregate, purchaseItemAggregate, recentPurchases] = await Promise.all([
+    const topProductWindowStart = new Date(now);
+    topProductWindowStart.setUTCDate(topProductWindowStart.getUTCDate() - 30);
+
+    const [purchaseAggregate, purchaseItemAggregate, recentPurchases, recentLineItems] = await Promise.all([
       prisma.purchase.aggregate({
         _sum: { totalAmount: true },
         _count: { _all: true }
@@ -337,6 +360,20 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true, totalAmount: true }
+      }),
+      prisma.purchaseItem.findMany({
+        where: {
+          purchase: {
+            createdAt: {
+              gte: topProductWindowStart
+            }
+          }
+        },
+        select: {
+          productId: true,
+          quantity: true,
+          unitPrice: true
+        }
       })
     ]);
 
@@ -368,6 +405,35 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       }
     });
 
+    const productTotals = new Map<string, { quantity: number; revenue: number }>();
+    for (const lineItem of recentLineItems) {
+      const current = productTotals.get(lineItem.productId) ?? { quantity: 0, revenue: 0 };
+      current.quantity += lineItem.quantity;
+      current.revenue += normalizeDecimal(lineItem.unitPrice) * lineItem.quantity;
+      productTotals.set(lineItem.productId, current);
+    }
+
+    const sortedTopProducts = Array.from(productTotals.entries())
+      .sort(([, a], [, b]) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    let productTitles: Record<string, string> = {};
+    if (sortedTopProducts.length > 0) {
+      const productDetails = await prisma.product.findMany({
+        where: {
+          id: {
+            in: sortedTopProducts.map(([productId]) => productId)
+          }
+        },
+        select: { id: true, title: true }
+      });
+
+      productTitles = productDetails.reduce<Record<string, string>>((acc, product) => {
+        acc[product.id] = product.title;
+        return acc;
+      }, {});
+    }
+
     res.json({
       totalTransactions: purchaseAggregate._count._all ?? 0,
       totalRevenue: normalizeDecimal(purchaseAggregate._sum.totalAmount),
@@ -383,7 +449,13 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
           weekStart,
           total: Number(totals.total.toFixed(2)),
           transactions: totals.transactions
-        }))
+        })),
+      topProducts: sortedTopProducts.map(([productId, totals]) => ({
+        productId,
+        title: productTitles[productId] ?? productId,
+        quantity: totals.quantity,
+        revenue: Number(totals.revenue.toFixed(2))
+      }))
     });
   } catch (error) {
     res.status(500).json({ message: 'Unable to load sales stats.' });
@@ -395,7 +467,6 @@ app.use('/admin', adminRouter);
 if (process.env.NODE_ENV !== 'test') {
   app.listen(port, () => {
     // Boot message helps validate that the placeholder server runs.
-    // eslint-disable-next-line no-console
     console.log(`API listening on http://localhost:${port}`);
   });
 }

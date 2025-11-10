@@ -8,6 +8,7 @@ const {
   createProductMock,
   updateProductMock,
   updateProductInventoryMock,
+  archiveProductMock,
   getKioskConfigMock,
   setInventoryEnabledMock,
   prismaMock
@@ -20,7 +21,11 @@ const {
     },
     purchaseItem: {
       aggregate: vi.fn(),
-      deleteMany: vi.fn()
+      deleteMany: vi.fn(),
+      findMany: vi.fn()
+    },
+    product: {
+      findMany: vi.fn()
     }
   };
 
@@ -31,6 +36,7 @@ const {
     createProductMock: vi.fn(),
     updateProductMock: vi.fn(),
     updateProductInventoryMock: vi.fn(),
+    archiveProductMock: vi.fn(),
     getKioskConfigMock: vi.fn(),
     setInventoryEnabledMock: vi.fn(),
     prismaMock: prisma
@@ -43,7 +49,8 @@ vi.mock('../repositories/productRepository', () => ({
   listAllProducts: listAllProductsMock,
   createProduct: createProductMock,
   updateProduct: updateProductMock,
-  updateProductInventory: updateProductInventoryMock
+  updateProductInventory: updateProductInventoryMock,
+  archiveProduct: archiveProductMock
 }));
 
 vi.mock('../repositories/settingsRepository', () => ({
@@ -82,6 +89,7 @@ describe('API routes', () => {
     createProductMock.mockResolvedValue({ id: 'new-product' });
     updateProductMock.mockResolvedValue({ id: 'demo-coffee' });
     updateProductInventoryMock.mockResolvedValue({ id: 'demo-coffee', inventoryCount: 7 });
+    archiveProductMock.mockResolvedValue({ id: 'demo-coffee', isActive: false });
 
     getKioskConfigMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: true });
     setInventoryEnabledMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: false });
@@ -94,6 +102,14 @@ describe('API routes', () => {
     prismaMock.purchase.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.purchaseItem.aggregate.mockResolvedValue({ _sum: { quantity: 9 } });
     prismaMock.purchaseItem.deleteMany.mockResolvedValue({ count: 0 });
+    prismaMock.purchaseItem.findMany.mockResolvedValue([
+      { productId: 'demo-coffee', quantity: 5, unitPrice: 2.5 },
+      { productId: 'sparkling-water', quantity: 3, unitPrice: 3 }
+    ]);
+    prismaMock.product.findMany.mockResolvedValue([
+      { id: 'demo-coffee', title: 'Coffee' },
+      { id: 'sparkling-water', title: 'Sparkling Water' }
+    ]);
 
     process.env.ADMIN_API_KEY = 'test-secret';
 
@@ -188,6 +204,15 @@ describe('API routes', () => {
     expect(listAllProductsMock).toHaveBeenCalled();
   });
 
+  it('archives a product via admin endpoint', async () => {
+    const response = await request(app)
+      .delete('/admin/products/demo-coffee')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(archiveProductMock).toHaveBeenCalledWith('demo-coffee');
+  });
+
   it('updates kiosk config when admin toggles inventory', async () => {
     const response = await request(app)
       .patch('/admin/kiosk-mode')
@@ -218,9 +243,12 @@ describe('API routes', () => {
     expect(response.body.itemsSold).toBe(9);
     expect(Array.isArray(response.body.daily)).toBe(true);
     expect(Array.isArray(response.body.weekly)).toBe(true);
+    expect(Array.isArray(response.body.topProducts)).toBe(true);
+    expect(response.body.topProducts[0]).toMatchObject({ productId: 'demo-coffee', title: 'Coffee' });
     expect(response.body.daily).toHaveLength(7);
     expect(response.body.weekly).toHaveLength(4);
     expect(prismaMock.purchase.aggregate).toHaveBeenCalled();
     expect(prismaMock.purchase.findMany).toHaveBeenCalled();
+    expect(prismaMock.purchaseItem.findMany).toHaveBeenCalled();
   });
 });

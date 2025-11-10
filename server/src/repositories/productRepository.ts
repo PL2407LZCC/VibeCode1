@@ -249,3 +249,28 @@ export async function updateProductInventory(
     inventoryCount: product.inventoryCount
   };
 }
+
+export async function archiveProduct(
+  productId: string,
+  client: PrismaClient = prisma
+) {
+  const product = await client.product.update({
+    where: { id: productId },
+    data: {
+      isActive: false,
+      inventoryCount: 0
+    }
+  });
+
+  return {
+    id: product.id,
+    title: product.title,
+    description: product.description ?? '',
+    price: decimalToNumber(product.price),
+    imageUrl: product.imageUrl,
+    inventoryCount: product.inventoryCount,
+    isActive: product.isActive,
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt
+  };
+}

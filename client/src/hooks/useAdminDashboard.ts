@@ -33,6 +33,7 @@ type AdminDashboardState = {
   createProduct: (input: CreateProductInput) => Promise<void>;
   updateProduct: (id: string, input: UpdateProductInput) => Promise<void>;
   toggleInventory: (inventoryEnabled: boolean) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
 };
 
 const parseAdminProduct = (payload: any): AdminProduct => ({
@@ -60,15 +61,24 @@ const parseSalesStats = (payload: any): SalesStats => {
     transactions: Number(bucket?.transactions ?? 0)
   });
 
+  const toTopProduct = (bucket: any) => ({
+    productId: String(bucket?.productId ?? ''),
+    title: String(bucket?.title ?? ''),
+    quantity: Number(bucket?.quantity ?? 0),
+    revenue: Number(bucket?.revenue ?? 0)
+  });
+
   const daily = Array.isArray(payload?.daily) ? payload.daily.map(toDailyBucket) : [];
   const weekly = Array.isArray(payload?.weekly) ? payload.weekly.map(toWeeklyBucket) : [];
+  const topProducts = Array.isArray(payload?.topProducts) ? payload.topProducts.map(toTopProduct) : [];
 
   return {
     totalTransactions: Number(payload?.totalTransactions ?? 0),
     totalRevenue: Number(payload?.totalRevenue ?? 0),
     itemsSold: Number(payload?.itemsSold ?? 0),
     daily,
-    weekly
+    weekly,
+    topProducts
   };
 };
 
@@ -186,6 +196,16 @@ export function useAdminDashboard(): AdminDashboardState {
     [authorizedFetch, load]
   );
 
+  const deleteProduct = useCallback(
+    async (id: string) => {
+      await authorizedFetch(`/admin/products/${id}`, {
+        method: 'DELETE'
+      });
+      await load();
+    },
+    [authorizedFetch, load]
+  );
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -199,6 +219,7 @@ export function useAdminDashboard(): AdminDashboardState {
     refresh: load,
     createProduct,
     updateProduct,
-    toggleInventory
+    toggleInventory,
+    deleteProduct
   };
 }
