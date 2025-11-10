@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import cors from 'cors';
 import requireAdmin from './middleware/requireAdmin';
 import {
   listActiveProducts,
@@ -14,6 +15,10 @@ import prisma from './lib/prisma';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 type PurchaseItemPayload = {
   productId: unknown;
@@ -74,6 +79,11 @@ const resetState = async () => {
   await prisma.purchase.deleteMany();
 };
 
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true
+  })
+);
 app.use(express.json());
 
 app.get('/health', (_req: Request, res: Response) => {

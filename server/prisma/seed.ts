@@ -45,6 +45,7 @@ if (isDirectExecution) {
     })
     .catch(async (error) => {
       console.error('Seed failed', error);
+
       if (cachedClient) {
         await cachedClient.$disconnect();
       }
