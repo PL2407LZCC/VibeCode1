@@ -34,6 +34,7 @@ type AdminDashboardState = {
   updateProduct: (id: string, input: UpdateProductInput) => Promise<void>;
   toggleInventory: (inventoryEnabled: boolean) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
+  uploadImage: (file: File) => Promise<{ url: string; filename: string }>;
 };
 
 const parseAdminProduct = (payload: any): AdminProduct => ({
@@ -97,7 +98,9 @@ export function useAdminDashboard(): AdminDashboardState {
       }
 
       const headers = new Headers(init?.headers ?? {});
-      if (init?.body && !headers.has('Content-Type')) {
+      const body = init?.body as BodyInit | null | undefined;
+      const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+      if (body && !isFormData && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
       headers.set('x-admin-token', adminToken);
@@ -206,6 +209,33 @@ export function useAdminDashboard(): AdminDashboardState {
     [authorizedFetch, load]
   );
 
+  const uploadImage = useCallback(
+    async (file: File) => {
+      if (!file) {
+        throw new Error('No image file provided.');
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await authorizedFetch('/admin/uploads', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = await response.json();
+      const url = typeof payload?.url === 'string' ? payload.url : null;
+      const filename = typeof payload?.filename === 'string' ? payload.filename : null;
+
+      if (!url || !filename) {
+        throw new Error('Upload response missing image URL.');
+      }
+
+      return { url, filename };
+    },
+    [authorizedFetch]
+  );
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -220,6 +250,7 @@ export function useAdminDashboard(): AdminDashboardState {
     createProduct,
     updateProduct,
     toggleInventory,
-    deleteProduct
+    deleteProduct,
+    uploadImage
   };
 }

@@ -260,4 +260,99 @@ describe('AdminDashboard', () => {
 
     expect(screen.getByText(/archived/i)).toBeTruthy();
   });
+
+  it('uploads an image and populates the image URL field', async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('VITE_ADMIN_TOKEN', 'test-secret');
+
+    const productsPayload = {
+      items: [
+        {
+          id: 'demo-coffee',
+          title: 'Filter Coffee',
+          description: 'Fresh brew',
+          price: 2.5,
+          imageUrl: null,
+          inventoryCount: 5,
+          isActive: true,
+          createdAt: '2025-11-07T10:00:00.000Z',
+          updatedAt: '2025-11-07T10:00:00.000Z'
+        }
+      ]
+    };
+
+    const configPayload = {
+      currency: 'EUR',
+      paymentProvider: 'mobilepay',
+      inventoryEnabled: true
+    };
+
+    const statsPayload = {
+      totalTransactions: 3,
+      totalRevenue: 42,
+      itemsSold: 9,
+      daily: [],
+      weekly: [],
+      topProducts: []
+    };
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/admin/products') && method === 'GET') {
+        return createJsonResponse(productsPayload);
+      }
+
+      if (url.endsWith('/config')) {
+        return createJsonResponse(configPayload);
+      }
+
+      if (url.endsWith('/admin/stats/sales')) {
+        return createJsonResponse(statsPayload);
+      }
+
+      if (url.endsWith('/admin/uploads') && method === 'POST') {
+        const body = init?.body;
+        if (!(body instanceof FormData)) {
+          throw new Error('Expected FormData payload for uploads');
+        }
+
+        const uploaded = body.get('image');
+        expect(uploaded).toBeInstanceOf(File);
+        return createJsonResponse({ url: '/uploads/mock-image.png', filename: 'mock-image.png' }, 201);
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);
+    });
+
+    const fileInput = screen.getByLabelText(/Product image/i, { selector: 'input[type="file"]' });
+    const file = new File(['binary'], 'coffee.png', { type: 'image/png' });
+
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/admin/uploads'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Image URL$/i)).toHaveValue('/uploads/mock-image.png');
+    });
+
+    expect(screen.getByText(/image uploaded successfully/i)).toBeTruthy();
+  });
 });

@@ -1,5 +1,8 @@
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   listActiveProductsMock,
@@ -62,8 +65,11 @@ vi.mock('../lib/prisma', () => ({
   default: prismaMock
 }));
 
-// Import after mocking dependencies.
-import { app, resetState } from '../index';
+type ServerModule = typeof import('../index');
+
+let app!: ServerModule['app'];
+let resetState!: ServerModule['resetState'];
+let uploadsDirAbsolute!: string;
 
 const validPayload = {
   items: [
@@ -75,8 +81,23 @@ const validPayload = {
 };
 
 describe('API routes', () => {
+  beforeAll(async () => {
+    uploadsDirAbsolute = mkdtempSync(path.join(os.tmpdir(), 'vibecode-uploads-'));
+    process.env.UPLOADS_DIR = uploadsDirAbsolute;
+    process.env.UPLOAD_MAX_SIZE_MB = '1';
+
+    const serverModule: ServerModule = await import('../index');
+    app = serverModule.app;
+    resetState = serverModule.resetState;
+  });
+
   beforeEach(async () => {
     vi.clearAllMocks();
+
+    if (uploadsDirAbsolute) {
+      rmSync(uploadsDirAbsolute, { recursive: true, force: true });
+      mkdirSync(uploadsDirAbsolute, { recursive: true });
+    }
 
     listActiveProductsMock.mockResolvedValue([
       { id: 'demo-coffee', title: 'Coffee', price: '2.50', imageUrl: null, inventoryCount: 5, isActive: true }
@@ -114,6 +135,12 @@ describe('API routes', () => {
     process.env.ADMIN_API_KEY = 'test-secret';
 
     await resetState();
+  });
+
+  afterAll(() => {
+    if (uploadsDirAbsolute) {
+      rmSync(uploadsDirAbsolute, { recursive: true, force: true });
+    }
   });
 
   it('responds with ok status on /health', async () => {
@@ -250,5 +277,54 @@ describe('API routes', () => {
     expect(prismaMock.purchase.aggregate).toHaveBeenCalled();
     expect(prismaMock.purchase.findMany).toHaveBeenCalled();
     expect(prismaMock.purchaseItem.findMany).toHaveBeenCalled();
+  });
+
+  it('allows admins to upload images and returns file metadata', async () => {
+    const pngBuffer = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQotAAAAAElFTkSuQmCC',
+      'base64'
+    );
+
+    const response = await request(app)
+      .post('/admin/uploads')
+      .set('x-admin-token', 'test-secret')
+      .attach('image', pngBuffer, { filename: 'tiny.png', contentType: 'image/png' });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ filename: expect.stringMatching(/\.png$/), url: expect.stringMatching(/^\/uploads\//) });
+
+  const savedFile = path.join(uploadsDirAbsolute, response.body.filename);
+    expect(existsSync(savedFile)).toBe(true);
+    expect(readFileSync(savedFile).equals(pngBuffer)).toBe(true);
+  });
+
+  it('rejects uploads without admin credentials', async () => {
+    const response = await request(app)
+      .post('/admin/uploads')
+      .attach('image', Buffer.from('data'), { filename: 'tiny.png', contentType: 'image/png' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects unsupported file types for uploads', async () => {
+    const response = await request(app)
+      .post('/admin/uploads')
+      .set('x-admin-token', 'test-secret')
+      .attach('image', Buffer.from('plain text'), { filename: 'note.txt', contentType: 'text/plain' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('Only JPEG, PNG, or WebP images are allowed');
+  });
+
+  it('rejects uploads that exceed the configured size limit', async () => {
+    const largeBuffer = Buffer.alloc(1024 * 1024 * 2, 0xff);
+
+    const response = await request(app)
+      .post('/admin/uploads')
+      .set('x-admin-token', 'test-secret')
+      .attach('image', largeBuffer, { filename: 'large.png', contentType: 'image/png' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('Image must be 1 MB or smaller');
   });
 });

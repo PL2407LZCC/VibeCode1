@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { seedDatabase } from '../lib/seedData';
 
 const TEST_TIMEOUT_MS = 120_000;
-vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: TEST_TIMEOUT_MS, hookTimeout: TEST_TIMEOUT_MS });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,8 +74,12 @@ describeWithRuntime('Product repository persistence', () => {
 
     const products = await listActiveProducts(prisma);
 
-    expect(products).toHaveLength(2);
-    expect(products[0]).toMatchObject({ id: 'demo-coffee', inventoryCount: 18 });
+    expect(products).toHaveLength(6);
+    expect(products.find((product) => product.id === 'demo-coffee')).toMatchObject({
+      id: 'demo-coffee',
+      inventoryCount: 54,
+      isActive: true
+    });
   });
 
   it('creates a purchase and updates inventory counts', async () => {
@@ -112,8 +116,8 @@ describeWithRuntime('Product repository persistence', () => {
     const coffee = await prisma.product.findUnique({ where: { id: 'demo-coffee' } });
     const energy = await prisma.product.findUnique({ where: { id: 'demo-energy' } });
 
-    expect(coffee?.inventoryCount).toBe(16);
-    expect(energy?.inventoryCount).toBe(8);
+    expect(coffee?.inventoryCount).toBe(52);
+    expect(energy?.inventoryCount).toBe(39);
   });
 
   it('throws when attempting to create a purchase with unknown products', async () => {

@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import multer, { MulterError } from 'multer';
 import cors from 'cors';
 import requireAdmin from './middleware/requireAdmin';
 import {
@@ -13,6 +14,14 @@ import {
 import { getKioskConfig, setInventoryEnabled } from './repositories/settingsRepository';
 import prisma from './lib/prisma';
 import { seedDatabase } from './lib/seedData';
+import {
+  ensureUploadsDir,
+  UPLOADS_DIR,
+  ALLOWED_IMAGE_MIME_TYPES,
+  MAX_UPLOAD_SIZE_BYTES,
+  createUploadFilename,
+  toPublicUploadPath
+} from './lib/uploads';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
@@ -81,12 +90,49 @@ const resetState = async () => {
   await prisma.purchase.deleteMany();
 };
 
+type UploadMiddlewareError = Error & { code?: string };
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      ensureUploadsDir()
+        .then(() => cb(null, UPLOADS_DIR))
+        .catch((error) => cb(error as Error, UPLOADS_DIR));
+    },
+    filename: (_req, file, cb) => {
+      try {
+        const filename = createUploadFilename(file.mimetype, file.originalname);
+        cb(null, filename);
+      } catch (error) {
+        cb(error as Error, '');
+      }
+    }
+  }),
+  limits: {
+    fileSize: MAX_UPLOAD_SIZE_BYTES
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
+      const error: UploadMiddlewareError = new Error('Only JPEG, PNG, or WebP images are allowed.');
+      error.code = 'UNSUPPORTED_FILE_TYPE';
+      cb(error);
+      return;
+    }
+
+    cb(null, true);
+  }
+});
+
+const singleImageUpload = imageUpload.single('image');
+const MAX_UPLOAD_SIZE_MB = Math.max(1, Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)));
+
 app.use(
   cors({
     origin: allowedOrigins.length > 0 ? allowedOrigins : true
   })
 );
 app.use(express.json());
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });
@@ -166,6 +212,37 @@ app.post('/purchases', async (req: Request, res: Response) => {
 const adminRouter = express.Router();
 
 adminRouter.use(requireAdmin);
+
+adminRouter.post('/uploads', (req: Request, res: Response) => {
+  singleImageUpload(req, res, (err?: unknown) => {
+    if (err) {
+      if (err instanceof MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ message: `Image must be ${MAX_UPLOAD_SIZE_MB} MB or smaller.` });
+        }
+
+        return res.status(400).json({ message: err.message });
+      }
+
+      const uploadError = err as UploadMiddlewareError;
+      if (uploadError.code === 'UNSUPPORTED_FILE_TYPE') {
+        return res.status(400).json({ message: 'Only JPEG, PNG, or WebP images are allowed.' });
+      }
+
+      return res.status(500).json({ message: 'Unable to upload image.' });
+    }
+
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      return res.status(400).json({ message: 'Image file is required.' });
+    }
+
+    return res.status(201).json({
+      url: toPublicUploadPath(file.filename),
+      filename: file.filename
+    });
+  });
+});
 
 adminRouter.get('/products', async (_req: Request, res: Response) => {
   try {
@@ -488,6 +565,12 @@ const listen = () =>
 const initialize = async () => {
   if (process.env.NODE_ENV === 'test') {
     return;
+  }
+
+  try {
+    await ensureUploadsDir();
+  } catch (error) {
+    console.error('Failed to ensure uploads directory', error);
   }
 
   if (shouldAutoSeed) {

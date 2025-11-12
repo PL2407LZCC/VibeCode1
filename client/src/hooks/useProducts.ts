@@ -21,6 +21,27 @@ const FALLBACK_PRODUCTS: Product[] = [
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
+const resolveImageUrl = (rawUrl: unknown) => {
+  if (typeof rawUrl !== 'string' || rawUrl.trim().length === 0) {
+    return '';
+  }
+
+  if (/^(https?:)?\/\//i.test(rawUrl) || rawUrl.startsWith('data:')) {
+    return rawUrl;
+  }
+
+  try {
+    if (rawUrl.startsWith('/uploads/')) {
+      return new URL(rawUrl, API_URL).toString();
+    }
+
+  const clientBase = typeof window !== 'undefined' ? window.location.origin : API_URL;
+    return new URL(rawUrl, clientBase).toString();
+  } catch {
+    return rawUrl;
+  }
+};
+
 export function useProducts(): ProductsState {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,7 +64,7 @@ export function useProducts(): ProductsState {
             title: item.title,
             description: item.description ?? '',
             price: Number(item.price ?? 0),
-            imageUrl: item.imageUrl ?? '',
+            imageUrl: resolveImageUrl(item.imageUrl),
             inventory: Number(item.inventory ?? item.inventoryCount ?? 0)
           }))
         : [];

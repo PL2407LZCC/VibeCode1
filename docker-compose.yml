@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: ./server
-    command: sh -c "npm run prisma:generate && npm run dev"
+    command: sh -c "npm run prisma:generate && npm run prisma:migrate:deploy && npm run dev"
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -14,6 +14,7 @@ services:
     volumes:
       - ./server:/usr/src/app
       - /usr/src/app/node_modules
+      - ./server/uploads:/usr/src/app/uploads
       - ./tsconfig.base.json:/usr/src/tsconfig.base.json:ro
     depends_on:
       db:

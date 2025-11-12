@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
 import type { AdminProduct } from '../types';
 
@@ -14,6 +14,7 @@ type AdminProductRowProps = {
   onSave: (id: string, payload: AdminProductUpdatePayload) => Promise<void>;
   onStatus: (kind: StatusKind, text: string) => void;
   onArchive: (product: AdminProduct) => void | Promise<void>;
+  onUploadImage: (file: File) => Promise<{ url: string; filename: string }>;
   disabled?: boolean;
 };
 
@@ -55,13 +56,36 @@ export function AdminDashboard() {
     updateProduct,
     toggleInventory,
     deleteProduct,
-    refresh
+    refresh,
+    uploadImage
   } = useAdminDashboard();
   const [formState, setFormState] = useState<CreateFormState>(INITIAL_FORM);
   const [status, setStatus] = useState<StatusMessage | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handleStatus = (kind: StatusKind, text: string) => {
     setStatus({ kind, text });
+  };
+
+  const handleCreateImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setStatus(null);
+    setIsUploadingImage(true);
+
+    try {
+      const result = await uploadImage(file);
+      setFormState((prev) => ({ ...prev, imageUrl: result.url }));
+      handleStatus('success', 'Image uploaded successfully.');
+    } catch (err) {
+      handleStatus('error', err instanceof Error ? err.message : 'Failed to upload image.');
+    } finally {
+      setIsUploadingImage(false);
+      event.target.value = '';
+    }
   };
 
   const handleCreateProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -230,9 +254,27 @@ export function AdminDashboard() {
               </label>
 
               <label className="admin-field admin-field--full">
+                <span>Product image</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleCreateImageUpload}
+                  disabled={isUploadingImage || isLoading}
+                />
+                <small>
+                  {isUploadingImage
+                    ? 'Uploading image…'
+                    : formState.imageUrl
+                      ? `Image URL set to ${formState.imageUrl}`
+                      : 'Upload a new image or paste a URL below.'}
+                </small>
+              </label>
+
+              <label className="admin-field admin-field--full">
                 <span>Image URL</span>
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   value={formState.imageUrl}
                   onChange={(event) => setFormState((prev) => ({ ...prev, imageUrl: event.target.value }))}
                   placeholder="https://images.example.com/item.jpg"
@@ -250,7 +292,11 @@ export function AdminDashboard() {
             </div>
 
             <div className="admin-form__actions">
-              <button type="submit" className="admin-button admin-button--primary" disabled={isLoading}>
+              <button
+                type="submit"
+                className="admin-button admin-button--primary"
+                disabled={isLoading || isUploadingImage}
+              >
                 Add Product
               </button>
             </div>
@@ -279,6 +325,7 @@ export function AdminDashboard() {
                   onSave={updateProduct}
                   onArchive={handleArchiveProduct}
                   onStatus={handleStatus}
+                  onUploadImage={uploadImage}
                   disabled={isLoading}
                 />
               ))
@@ -383,7 +430,7 @@ export function AdminDashboard() {
   );
 }
 
-function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: AdminProductRowProps) {
+function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, disabled }: AdminProductRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formState, setFormState] = useState({
     title: product.title,
@@ -393,6 +440,7 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: Adm
     inventoryCount: product.inventoryCount.toString(),
     isActive: product.isActive
   });
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -429,6 +477,27 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: Adm
       setIsEditing(false);
     } catch (err) {
       onStatus('error', err instanceof Error ? err.message : 'Failed to update product.');
+    }
+  };
+
+  const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingImage(true);
+    onStatus('success', 'Uploading image…');
+
+    try {
+      const result = await onUploadImage(file);
+      setFormState((prev) => ({ ...prev, imageUrl: result.url }));
+      onStatus('success', 'Image uploaded successfully.');
+    } catch (err) {
+      onStatus('error', err instanceof Error ? err.message : 'Failed to upload image.');
+    } finally {
+      setIsUploadingImage(false);
+      event.target.value = '';
     }
   };
 
@@ -504,11 +573,29 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: Adm
               />
             </label>
             <label className="admin-field admin-field--full">
+              <span>Product image</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleImageUpload}
+                disabled={disabled || isUploadingImage}
+              />
+              <small>
+                {isUploadingImage
+                  ? 'Uploading image…'
+                  : formState.imageUrl
+                    ? `Image URL set to ${formState.imageUrl}`
+                    : 'Upload a new image or paste a URL below.'}
+              </small>
+            </label>
+            <label className="admin-field admin-field--full">
               <span>Image URL</span>
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 value={formState.imageUrl}
                 onChange={(event) => setFormState((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                disabled={isUploadingImage}
               />
             </label>
             <label className="admin-checkbox">
@@ -522,7 +609,11 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, disabled }: Adm
           </div>
 
           <div className="admin-form__actions">
-            <button type="submit" className="admin-button admin-button--primary" disabled={disabled}>
+            <button
+              type="submit"
+              className="admin-button admin-button--primary"
+              disabled={disabled || isUploadingImage}
+            >
               Save changes
             </button>
           </div>

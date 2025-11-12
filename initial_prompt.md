@@ -19,13 +19,3 @@ React with typescript where possible, PostgreSQL, node, express
 Latest stable releases for the versions.
 
 GitHub actions only for build
-
-## Admin Image Uploads
-
-- Admin clients can upload product images via `POST /admin/uploads` with the `image` field; the request must include the `x-admin-token` header.
-- Accepted formats: JPEG, PNG, and WebP. Files larger than the configured maximum are rejected with a helpful error.
-- Uploaded files are saved under the directory pointed to `UPLOADS_DIR` (default: `<repo>/server/uploads`). The API serves them read-only at `/uploads/<filename>`.
-- Adjust limits through environment variables:
-	- `UPLOADS_DIR`: absolute or relative path to the writable uploads directory.
-	- `UPLOAD_MAX_SIZE_MB`: maximum allowed file size in megabytes (defaults to 5).
-- Development `docker-compose.yml` maps `./server/uploads` into the API container so uploads persist between restarts. Ensure the host path remains writable when running inside Docker Desktop.
