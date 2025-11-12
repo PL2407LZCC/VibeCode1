@@ -12,6 +12,7 @@ import {
 } from './repositories/productRepository';
 import { getKioskConfig, setInventoryEnabled } from './repositories/settingsRepository';
 import prisma from './lib/prisma';
+import { seedDatabase } from './lib/seedData';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
@@ -19,6 +20,7 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:51
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const shouldAutoSeed = (process.env.AUTO_SEED ?? 'true').toLowerCase() !== 'false';
 
 type PurchaseItemPayload = {
   productId: unknown;
@@ -438,10 +440,11 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         select: { id: true, title: true }
       });
 
-      productTitles = productDetails.reduce<Record<string, string>>((acc, product) => {
-        acc[product.id] = product.title;
-        return acc;
-      }, {});
+      const titleMap: Record<string, string> = {};
+      for (const product of productDetails) {
+        titleMap[product.id] = product.title;
+      }
+      productTitles = titleMap;
     }
 
     res.json({
@@ -474,11 +477,39 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
 
 app.use('/admin', adminRouter);
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(port, () => {
-    // Boot message helps validate that the placeholder server runs.
-    console.log(`API listening on http://localhost:${port}`);
+const listen = () =>
+  new Promise<void>((resolve) => {
+    app.listen(port, () => {
+      console.log(`API listening on http://localhost:${port}`);
+      resolve();
+    });
   });
-}
+
+const initialize = async () => {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  if (shouldAutoSeed) {
+    try {
+      const productCount = await prisma.product.count();
+      if (productCount === 0) {
+        await seedDatabase(prisma);
+        console.log('Database seeded with mock data on startup.');
+      }
+    } catch (error) {
+      console.error('Failed to seed database on startup', error);
+    }
+  }
+
+  try {
+    await listen();
+  } catch (error) {
+    console.error('Failed to start API server', error);
+    process.exitCode = 1;
+  }
+};
+
+void initialize();
 
 export { app, resetState };
