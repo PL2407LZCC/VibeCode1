@@ -116,27 +116,31 @@ function App() {
       </header>
 
       {view === 'kiosk' ? (
-        <main className="kiosk-layout">
-          {isLoading && <p role="status">Loading products…</p>}
-          {error && (
-            <div className="error-banner" role="alert">
-              <p>{error}</p>
-              <button type="button" onClick={refetch}>
-                Retry
-              </button>
-            </div>
-          )}
-          <ProductGrid products={augmentedProducts} onAddToCart={handleAddToCart} />
-          <CartPanel
-            lines={cartLines}
-            total={cartTotal}
-            onIncrease={handleIncrease}
-            onDecrease={handleDecrease}
-            onClear={handleClear}
-            onCheckout={handleCheckout}
-            paymentReference={paymentReference}
-          />
-        </main>
+        <div className="kiosk-container">
+          <main className="kiosk-layout">
+            {isLoading && <p role="status">Loading products…</p>}
+            {error && (
+              <div className="error-banner" role="alert">
+                <p>{error}</p>
+                <button type="button" onClick={refetch}>
+                  Retry
+                </button>
+              </div>
+            )}
+            <ProductGrid products={augmentedProducts} onAddToCart={handleAddToCart} />
+          </main>
+          <aside className="kiosk-cart-float" aria-label="Shopping cart">
+            <CartPanel
+              lines={cartLines}
+              total={cartTotal}
+              onIncrease={handleIncrease}
+              onDecrease={handleDecrease}
+              onClear={handleClear}
+              onCheckout={handleCheckout}
+              paymentReference={paymentReference}
+            />
+          </aside>
+        </div>
       ) : (
         <main className="admin-layout">
           <AdminDashboard />
