@@ -55,6 +55,14 @@ const CREATE_FIELD_IDS = {
   isActive: 'create-is-active'
 } as const;
 
+const COLLAPSIBLE_SECTION_IDS = {
+  create: 'admin-section-create',
+  catalog: 'admin-section-catalog',
+  sales: 'admin-section-sales'
+} as const;
+
+type CollapsibleSectionKey = keyof typeof COLLAPSIBLE_SECTION_IDS;
+
 export function AdminDashboard() {
   const {
     products,
@@ -72,6 +80,13 @@ export function AdminDashboard() {
   const [formState, setFormState] = useState<CreateFormState>(INITIAL_FORM);
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
+    create: false,
+    catalog: false,
+    sales: false
+  });
+
+  const { create: isCreateOpen, catalog: isCatalogOpen, sales: isSalesOpen } = expandedSections;
 
   const handleStatus = (kind: StatusKind, text: string) => {
     setStatus({ kind, text });
@@ -176,6 +191,10 @@ export function AdminDashboard() {
     await refresh();
   };
 
+  const toggleSection = (section: CollapsibleSectionKey) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
   const dailyMax = useMemo(() => {
     if (!stats || stats.daily.length === 0) {
       return 1;
@@ -204,267 +223,325 @@ export function AdminDashboard() {
 
       <div className="admin-dashboard__grid">
         <section className="admin-card admin-card--wide">
-          <header className="admin-card__header">
-            <div>
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('create')}
+            aria-expanded={isCreateOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.create}
+          >
+            <span
+              className={`admin-card__summary-icon${isCreateOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
               <h2>Inventory Controls</h2>
               <p className="admin-card__subtitle">Manage kiosk availability and create new catalog entries.</p>
             </div>
-            <button type="button" className="admin-button" onClick={handleInventoryToggle} disabled={!config || isLoading}>
-              {config?.inventoryEnabled ? 'Disable inventory gate' : 'Enable inventory gate'}
-            </button>
-          </header>
+          </button>
 
-          <form className="admin-form admin-form--create" onSubmit={handleCreateProduct}>
-            <h3 className="admin-form__title">Add a new product</h3>
-            <div className="admin-form__rows">
-              <div className="admin-form__row">
-                <label htmlFor={CREATE_FIELD_IDS.title} className="admin-form__label">
-                  Title
-                </label>
-                <input
-                  id={CREATE_FIELD_IDS.title}
-                  type="text"
-                  className="admin-form__control"
-                  value={formState.title}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder="Cold Brew Coffee"
-                  required
-                />
+          {isCreateOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.create} className="admin-card__content">
+              <div className="admin-card__actions">
+                <button
+                  type="button"
+                  className="admin-button"
+                  onClick={handleInventoryToggle}
+                  disabled={!config || isLoading}
+                >
+                  {config?.inventoryEnabled ? 'Disable inventory gate' : 'Enable inventory gate'}
+                </button>
               </div>
 
-              <div className="admin-form__row">
-                <label htmlFor={CREATE_FIELD_IDS.price} className="admin-form__label">
-                  Price (€)
-                </label>
-                <input
-                  id={CREATE_FIELD_IDS.price}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="admin-form__control"
-                  value={formState.price}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, price: event.target.value }))}
-                  placeholder="3.50"
-                  required
-                />
-              </div>
+              <form className="admin-form admin-form--create" onSubmit={handleCreateProduct}>
+                <h3 className="admin-form__title">Add a new product</h3>
+                <div className="admin-form__rows">
+                  <div className="admin-form__row">
+                    <label htmlFor={CREATE_FIELD_IDS.title} className="admin-form__label">
+                      Title
+                    </label>
+                    <input
+                      id={CREATE_FIELD_IDS.title}
+                      type="text"
+                      className="admin-form__control"
+                      value={formState.title}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
+                      placeholder="Cold Brew Coffee"
+                      required
+                    />
+                  </div>
 
-              <div className="admin-form__row">
-                <label htmlFor={CREATE_FIELD_IDS.inventoryCount} className="admin-form__label">
-                  Inventory
-                </label>
-                <input
-                  id={CREATE_FIELD_IDS.inventoryCount}
-                  type="number"
-                  min="0"
-                  step="1"
-                  className="admin-form__control"
-                  value={formState.inventoryCount}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, inventoryCount: event.target.value }))}
-                  placeholder="12"
-                  required
-                />
-              </div>
+                  <div className="admin-form__row">
+                    <label htmlFor={CREATE_FIELD_IDS.price} className="admin-form__label">
+                      Price (€)
+                    </label>
+                    <input
+                      id={CREATE_FIELD_IDS.price}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="admin-form__control"
+                      value={formState.price}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, price: event.target.value }))}
+                      placeholder="3.50"
+                      required
+                    />
+                  </div>
 
-              <div className="admin-form__row admin-form__row--textarea">
-                <label htmlFor={CREATE_FIELD_IDS.description} className="admin-form__label">
-                  Description
-                </label>
-                <textarea
-                  id={CREATE_FIELD_IDS.description}
-                  className="admin-form__control admin-form__control--textarea"
-                  value={formState.description}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
-                  rows={3}
-                  placeholder="Tasting notes, allergens, or other helpful context"
-                />
-              </div>
+                  <div className="admin-form__row">
+                    <label htmlFor={CREATE_FIELD_IDS.inventoryCount} className="admin-form__label">
+                      Inventory
+                    </label>
+                    <input
+                      id={CREATE_FIELD_IDS.inventoryCount}
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="admin-form__control"
+                      value={formState.inventoryCount}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, inventoryCount: event.target.value }))}
+                      placeholder="12"
+                      required
+                    />
+                  </div>
 
-              <div className="admin-form__row admin-form__row--file">
-                <label htmlFor={CREATE_FIELD_IDS.imageFile} className="admin-form__label">
-                  Product image
-                </label>
-                <div className="admin-form__control-group">
-                  <input
-                    id={CREATE_FIELD_IDS.imageFile}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="admin-form__control admin-form__control--file"
-                    onChange={handleCreateImageUpload}
-                    disabled={isUploadingImage || isLoading}
-                  />
-                  <small className="admin-form__help">
-                    {isUploadingImage
-                      ? 'Uploading image…'
-                      : formState.imageUrl
-                        ? `Image URL set to ${formState.imageUrl}`
-                        : 'Upload a new image or paste a URL below.'}
-                  </small>
+                  <div className="admin-form__row admin-form__row--textarea">
+                    <label htmlFor={CREATE_FIELD_IDS.description} className="admin-form__label">
+                      Description
+                    </label>
+                    <textarea
+                      id={CREATE_FIELD_IDS.description}
+                      className="admin-form__control admin-form__control--textarea"
+                      value={formState.description}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
+                      rows={3}
+                      placeholder="Tasting notes, allergens, or other helpful context"
+                    />
+                  </div>
+
+                  <div className="admin-form__row admin-form__row--file">
+                    <label htmlFor={CREATE_FIELD_IDS.imageFile} className="admin-form__label">
+                      Product image
+                    </label>
+                    <div className="admin-form__control-group">
+                      <input
+                        id={CREATE_FIELD_IDS.imageFile}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="admin-form__control admin-form__control--file"
+                        onChange={handleCreateImageUpload}
+                        disabled={isUploadingImage || isLoading}
+                      />
+                      <small className="admin-form__help">
+                        {isUploadingImage
+                          ? 'Uploading image…'
+                          : formState.imageUrl
+                            ? `Image URL set to ${formState.imageUrl}`
+                            : 'Upload a new image or paste a URL below.'}
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="admin-form__row">
+                    <label htmlFor={CREATE_FIELD_IDS.imageUrl} className="admin-form__label">
+                      Image URL
+                    </label>
+                    <input
+                      id={CREATE_FIELD_IDS.imageUrl}
+                      type="text"
+                      inputMode="url"
+                      className="admin-form__control"
+                      value={formState.imageUrl}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                      placeholder="https://images.example.com/item.jpg"
+                    />
+                  </div>
+
+                  <div className="admin-form__row admin-form__row--checkbox">
+                    <span className="admin-form__label">Status</span>
+                    <label className="admin-form__checkbox" htmlFor={CREATE_FIELD_IDS.isActive}>
+                      <input
+                        id={CREATE_FIELD_IDS.isActive}
+                        type="checkbox"
+                        checked={formState.isActive}
+                        onChange={(event) => setFormState((prev) => ({ ...prev, isActive: event.target.checked }))}
+                      />
+                      <span>Active in kiosk</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <div className="admin-form__row">
-                <label htmlFor={CREATE_FIELD_IDS.imageUrl} className="admin-form__label">
-                  Image URL
-                </label>
-                <input
-                  id={CREATE_FIELD_IDS.imageUrl}
-                  type="text"
-                  inputMode="url"
-                  className="admin-form__control"
-                  value={formState.imageUrl}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, imageUrl: event.target.value }))}
-                  placeholder="https://images.example.com/item.jpg"
-                />
-              </div>
-
-              <div className="admin-form__row admin-form__row--checkbox">
-                <span className="admin-form__label">Status</span>
-                <label className="admin-form__checkbox" htmlFor={CREATE_FIELD_IDS.isActive}>
-                  <input
-                    id={CREATE_FIELD_IDS.isActive}
-                    type="checkbox"
-                    checked={formState.isActive}
-                    onChange={(event) => setFormState((prev) => ({ ...prev, isActive: event.target.checked }))}
-                  />
-                  <span>Active in kiosk</span>
-                </label>
-              </div>
+                <div className="admin-form__actions">
+                  <button
+                    type="submit"
+                    className="admin-button admin-button--primary"
+                    disabled={isLoading || isUploadingImage}
+                  >
+                    Add Product
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <div className="admin-form__actions">
-              <button
-                type="submit"
-                className="admin-button admin-button--primary"
-                disabled={isLoading || isUploadingImage}
-              >
-                Add Product
-              </button>
-            </div>
-          </form>
+          ) : null}
         </section>
 
         <section className="admin-card admin-card--wide">
-          <header className="admin-card__header">
-            <div>
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('catalog')}
+            aria-expanded={isCatalogOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.catalog}
+          >
+            <span
+              className={`admin-card__summary-icon${isCatalogOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
               <h2>Product Catalog</h2>
               <p className="admin-card__subtitle">Edit prices, inventory, and visibility in real time.</p>
             </div>
-            <button type="button" className="admin-button admin-button--ghost" onClick={handleRefresh} disabled={isLoading}>
-              Refresh
-            </button>
-          </header>
+          </button>
 
-          <div className="admin-product-list" aria-live="polite">
-            {products.length === 0 ? (
-              <p className="admin-empty">{isLoading ? 'Loading products…' : 'No products available yet.'}</p>
-            ) : (
-              products.map((product) => (
-                <AdminProductRow
-                  key={`${product.id}-${product.updatedAt}`}
-                  product={product}
-                  onSave={updateProduct}
-                  onArchive={handleArchiveProduct}
-                  onStatus={handleStatus}
-                  onUploadImage={uploadImage}
+          {isCatalogOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.catalog} className="admin-card__content">
+              <div className="admin-card__actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--ghost"
+                  onClick={handleRefresh}
                   disabled={isLoading}
-                />
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="admin-card">
-          <header className="admin-card__header">
-            <div>
-              <h2>Sales Overview</h2>
-              <p className="admin-card__subtitle">Track demand trends and kiosk performance.</p>
-            </div>
-          </header>
-
-          {!stats ? (
-            <p className="admin-empty">{isLoading ? 'Loading analytics…' : 'No sales recorded yet.'}</p>
-          ) : (
-            <div className="admin-stats">
-              <dl className="admin-metrics">
-                <div>
-                  <dt>Total revenue</dt>
-                  <dd>€{stats.totalRevenue.toFixed(2)}</dd>
-                </div>
-                <div>
-                  <dt>Transactions</dt>
-                  <dd>{stats.totalTransactions}</dd>
-                </div>
-                <div>
-                  <dt>Items sold</dt>
-                  <dd>{stats.itemsSold}</dd>
-                </div>
-              </dl>
-
-              <div className="admin-charts">
-                <div>
-                  <h3>Last 7 days</h3>
-                  <ul className="admin-chart" role="list">
-                    {stats.daily.map((bucket) => {
-                      const percentage = dailyMax === 0 ? 0 : Math.round((bucket.total / dailyMax) * 100);
-                      return (
-                        <li key={bucket.date}>
-                          <span className="admin-chart__label">{bucket.date}</span>
-                          <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}> 
-                            <span style={{ width: `${percentage}%` }} />
-                          </div>
-                          <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-
-                <div>
-                  <h3>Last 4 weeks</h3>
-                  <ul className="admin-chart" role="list">
-                    {stats.weekly.map((bucket) => {
-                      const percentage = weeklyMax === 0 ? 0 : Math.round((bucket.total / weeklyMax) * 100);
-                      return (
-                        <li key={bucket.weekStart}>
-                          <span className="admin-chart__label">Week of {bucket.weekStart}</span>
-                          <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}>
-                            <span style={{ width: `${percentage}%` }} />
-                          </div>
-                          <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
+                >
+                  Refresh
+                </button>
               </div>
 
-              <div className="admin-top-products">
-                <h3>Top products (30 days)</h3>
-                {stats.topProducts.length === 0 ? (
-                  <p className="admin-top-products__empty">No product sales yet.</p>
+              <div className="admin-product-list" aria-live="polite">
+                {products.length === 0 ? (
+                  <p className="admin-empty">{isLoading ? 'Loading products…' : 'No products available yet.'}</p>
                 ) : (
-                  <ol className="admin-top-products__list">
-                    {stats.topProducts.map((item) => {
-                      const percentage = topRevenueMax === 0 ? 0 : Math.round((item.revenue / topRevenueMax) * 100);
-                      return (
-                        <li key={item.productId} className="admin-top-products__item">
-                          <div>
-                            <span className="admin-top-products__title">{item.title}</span>
-                            <span className="admin-top-products__subtitle">{item.quantity} sold</span>
-                          </div>
-                          <div className="admin-top-products__bar" aria-label={`${item.revenue.toFixed(2)} revenue`}>
-                            <span style={{ width: `${percentage}%` }} />
-                          </div>
-                          <span className="admin-top-products__value">€{item.revenue.toFixed(2)}</span>
-                        </li>
-                      );
-                    })}
-                  </ol>
+                  products.map((product) => (
+                    <AdminProductRow
+                      key={`${product.id}-${product.updatedAt}`}
+                      product={product}
+                      onSave={updateProduct}
+                      onArchive={handleArchiveProduct}
+                      onStatus={handleStatus}
+                      onUploadImage={uploadImage}
+                      disabled={isLoading}
+                    />
+                  ))
                 )}
               </div>
             </div>
-          )}
+          ) : null}
+        </section>
+
+        <section className="admin-card">
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('sales')}
+            aria-expanded={isSalesOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.sales}
+          >
+            <span
+              className={`admin-card__summary-icon${isSalesOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
+              <h2>Sales Overview</h2>
+              <p className="admin-card__subtitle">Track demand trends and kiosk performance.</p>
+            </div>
+          </button>
+
+          {isSalesOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.sales} className="admin-card__content">
+              {!stats ? (
+                <p className="admin-empty">{isLoading ? 'Loading analytics…' : 'No sales recorded yet.'}</p>
+              ) : (
+                <div className="admin-stats">
+                  <dl className="admin-metrics">
+                    <div>
+                      <dt>Total revenue</dt>
+                      <dd>€{stats.totalRevenue.toFixed(2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Transactions</dt>
+                      <dd>{stats.totalTransactions}</dd>
+                    </div>
+                    <div>
+                      <dt>Items sold</dt>
+                      <dd>{stats.itemsSold}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="admin-charts">
+                    <div>
+                      <h3>Last 7 days</h3>
+                      <ul className="admin-chart" role="list">
+                        {stats.daily.map((bucket) => {
+                          const percentage = dailyMax === 0 ? 0 : Math.round((bucket.total / dailyMax) * 100);
+                          return (
+                            <li key={bucket.date}>
+                              <span className="admin-chart__label">{bucket.date}</span>
+                              <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}>
+                                <span style={{ width: `${percentage}%` }} />
+                              </div>
+                              <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+
+                    <div>
+                      <h3>Last 4 weeks</h3>
+                      <ul className="admin-chart" role="list">
+                        {stats.weekly.map((bucket) => {
+                          const percentage = weeklyMax === 0 ? 0 : Math.round((bucket.total / weeklyMax) * 100);
+                          return (
+                            <li key={bucket.weekStart}>
+                              <span className="admin-chart__label">Week of {bucket.weekStart}</span>
+                              <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}>
+                                <span style={{ width: `${percentage}%` }} />
+                              </div>
+                              <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="admin-top-products">
+                    <h3>Top products (30 days)</h3>
+                    {stats.topProducts.length === 0 ? (
+                      <p className="admin-top-products__empty">No product sales yet.</p>
+                    ) : (
+                      <ol className="admin-top-products__list">
+                        {stats.topProducts.map((item) => {
+                          const percentage = topRevenueMax === 0 ? 0 : Math.round((item.revenue / topRevenueMax) * 100);
+                          return (
+                            <li key={item.productId} className="admin-top-products__item">
+                              <div>
+                                <span className="admin-top-products__title">{item.title}</span>
+                                <span className="admin-top-products__subtitle">{item.quantity} sold</span>
+                              </div>
+                              <div className="admin-top-products__bar" aria-label={`${item.revenue.toFixed(2)} revenue`}>
+                                <span style={{ width: `${percentage}%` }} />
+                              </div>
+                              <span className="admin-top-products__value">€{item.revenue.toFixed(2)}</span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

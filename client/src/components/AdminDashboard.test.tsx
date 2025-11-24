@@ -9,6 +9,11 @@ const createJsonResponse = (payload: unknown, status = 200) =>
     headers: { 'Content-Type': 'application/json' }
   });
 
+const expandSection = async (name: RegExp | string) => {
+  const toggle = await screen.findByRole('button', { name });
+  await userEvent.click(toggle);
+};
+
 describe('AdminDashboard', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -123,6 +128,9 @@ describe('AdminDashboard', () => {
 
     render(<AdminDashboard />);
 
+    await expandSection(/product catalog/i);
+    await expandSection(/inventory controls/i);
+
     await waitFor(() => {
       expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);
     });
@@ -153,6 +161,8 @@ describe('AdminDashboard', () => {
     });
 
     expect(screen.getByText(/product created successfully/i)).toBeTruthy();
+
+    await expandSection(/sales overview/i);
     expect(screen.getByText(/top products/i)).toBeTruthy();
   });
 
@@ -237,6 +247,8 @@ describe('AdminDashboard', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<AdminDashboard />);
+
+    await expandSection(/product catalog/i);
 
     await waitFor(() => {
       expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);
@@ -332,6 +344,9 @@ describe('AdminDashboard', () => {
     });
 
     render(<AdminDashboard />);
+
+    await expandSection(/product catalog/i);
+    await expandSection(/inventory controls/i);
 
     await waitFor(() => {
       expect(screen.getAllByRole('heading', { level: 3, name: 'Filter Coffee' })).toHaveLength(1);

@@ -215,6 +215,14 @@ async function setupAdminRoutes(page: Page) {
   return state;
 }
 
+async function expandSection(page: Page, matcher: RegExp | string) {
+  const toggle = page.getByRole('button', { name: matcher });
+  const expanded = await toggle.getAttribute('aria-expanded');
+  if (expanded !== 'true') {
+    await toggle.click();
+  }
+}
+
 test.describe('Admin dashboard', () => {
   test('loads analytics and toggles inventory gate', async ({ page }) => {
     const state = await setupAdminRoutes(page);
@@ -223,10 +231,13 @@ test.describe('Admin dashboard', () => {
     await page.getByRole('button', { name: 'Admin' }).click();
 
     await expect(page.getByRole('heading', { name: 'Inventory Controls' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible();
 
-  await expect(page.locator('.admin-metrics dd').first()).toHaveText('€256.40');
-  await expect(page.locator('.admin-metrics dd').nth(1)).toHaveText('42');
+    await expandSection(page, /Inventory Controls/);
+    await expandSection(page, /Sales Overview/);
+
+    await expect(page.locator('.admin-metrics dd').first()).toHaveText('€256.40');
+    await expect(page.locator('.admin-metrics dd').nth(1)).toHaveText('42');
 
     await page.getByRole('button', { name: 'Disable inventory gate' }).click();
 
@@ -240,6 +251,9 @@ test.describe('Admin dashboard', () => {
 
     await page.goto('/');
     await page.getByRole('button', { name: 'Admin' }).click();
+
+    await expandSection(page, /Inventory Controls/);
+    await expandSection(page, /Product Catalog/);
 
     await page.getByLabel('Title').fill('E2E Espresso Shot');
     await page.getByLabel('Price (€)').fill('4.20');

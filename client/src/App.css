@@ -480,6 +480,74 @@ body {
   border: 1px solid var(--color-border);
 }
 
+.admin-card__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-card__summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+.admin-card__summary-icon {
+  position: relative;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.admin-card__summary-icon::before,
+.admin-card__summary-icon::after {
+  content: '';
+  position: absolute;
+  background: var(--color-text);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.admin-card__summary-icon::before {
+  width: 0.6rem;
+  height: 2px;
+}
+
+.admin-card__summary-icon::after {
+  width: 2px;
+  height: 0.6rem;
+}
+
+.admin-card__summary-icon--open::after {
+  opacity: 0;
+  transform: scaleY(0);
+}
+
+.admin-card__summary:hover .admin-card__summary-icon {
+  border-color: var(--color-accent);
+  background-color: rgba(255, 79, 167, 0.12);
+}
+
+.admin-card__summary-content {
+  flex: 1;
+}
+
+.admin-card__summary-content h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text);
+}
+
 .admin-card__header {
   display: flex;
   justify-content: space-between;
@@ -497,6 +565,19 @@ body {
   margin: 0.35rem 0 0;
   color: var(--color-text-muted);
   font-size: 0.95rem;
+}
+
+.admin-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.admin-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .admin-banner {
