@@ -45,6 +45,16 @@ const INITIAL_FORM: CreateFormState = {
   isActive: true
 };
 
+const CREATE_FIELD_IDS = {
+  title: 'create-title',
+  price: 'create-price',
+  inventoryCount: 'create-inventory',
+  description: 'create-description',
+  imageFile: 'create-image-file',
+  imageUrl: 'create-image-url',
+  isActive: 'create-is-active'
+} as const;
+
 export function AdminDashboard() {
   const {
     products,
@@ -204,91 +214,122 @@ export function AdminDashboard() {
             </button>
           </header>
 
-          <form className="admin-form" onSubmit={handleCreateProduct}>
-            <div className="admin-form__grid">
-              <label className="admin-field">
-                <span>Title</span>
+          <form className="admin-form admin-form--create" onSubmit={handleCreateProduct}>
+            <h3 className="admin-form__title">Add a new product</h3>
+            <div className="admin-form__rows">
+              <div className="admin-form__row">
+                <label htmlFor={CREATE_FIELD_IDS.title} className="admin-form__label">
+                  Title
+                </label>
                 <input
+                  id={CREATE_FIELD_IDS.title}
                   type="text"
+                  className="admin-form__control"
                   value={formState.title}
                   onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
                   placeholder="Cold Brew Coffee"
                   required
                 />
-              </label>
+              </div>
 
-              <label className="admin-field">
-                <span>Price (€)</span>
+              <div className="admin-form__row">
+                <label htmlFor={CREATE_FIELD_IDS.price} className="admin-form__label">
+                  Price (€)
+                </label>
                 <input
+                  id={CREATE_FIELD_IDS.price}
                   type="number"
                   min="0"
                   step="0.01"
+                  className="admin-form__control"
                   value={formState.price}
                   onChange={(event) => setFormState((prev) => ({ ...prev, price: event.target.value }))}
                   placeholder="3.50"
                   required
                 />
-              </label>
+              </div>
 
-              <label className="admin-field">
-                <span>Inventory</span>
+              <div className="admin-form__row">
+                <label htmlFor={CREATE_FIELD_IDS.inventoryCount} className="admin-form__label">
+                  Inventory
+                </label>
                 <input
+                  id={CREATE_FIELD_IDS.inventoryCount}
                   type="number"
                   min="0"
                   step="1"
+                  className="admin-form__control"
                   value={formState.inventoryCount}
                   onChange={(event) => setFormState((prev) => ({ ...prev, inventoryCount: event.target.value }))}
                   placeholder="12"
                   required
                 />
-              </label>
+              </div>
 
-              <label className="admin-field admin-field--full">
-                <span>Description</span>
+              <div className="admin-form__row admin-form__row--textarea">
+                <label htmlFor={CREATE_FIELD_IDS.description} className="admin-form__label">
+                  Description
+                </label>
                 <textarea
+                  id={CREATE_FIELD_IDS.description}
+                  className="admin-form__control admin-form__control--textarea"
                   value={formState.description}
                   onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
-                  rows={2}
+                  rows={3}
                   placeholder="Tasting notes, allergens, or other helpful context"
                 />
-              </label>
+              </div>
 
-              <label className="admin-field admin-field--full">
-                <span>Product image</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleCreateImageUpload}
-                  disabled={isUploadingImage || isLoading}
-                />
-                <small>
-                  {isUploadingImage
-                    ? 'Uploading image…'
-                    : formState.imageUrl
-                      ? `Image URL set to ${formState.imageUrl}`
-                      : 'Upload a new image or paste a URL below.'}
-                </small>
-              </label>
+              <div className="admin-form__row admin-form__row--file">
+                <label htmlFor={CREATE_FIELD_IDS.imageFile} className="admin-form__label">
+                  Product image
+                </label>
+                <div className="admin-form__control-group">
+                  <input
+                    id={CREATE_FIELD_IDS.imageFile}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="admin-form__control admin-form__control--file"
+                    onChange={handleCreateImageUpload}
+                    disabled={isUploadingImage || isLoading}
+                  />
+                  <small className="admin-form__help">
+                    {isUploadingImage
+                      ? 'Uploading image…'
+                      : formState.imageUrl
+                        ? `Image URL set to ${formState.imageUrl}`
+                        : 'Upload a new image or paste a URL below.'}
+                  </small>
+                </div>
+              </div>
 
-              <label className="admin-field admin-field--full">
-                <span>Image URL</span>
+              <div className="admin-form__row">
+                <label htmlFor={CREATE_FIELD_IDS.imageUrl} className="admin-form__label">
+                  Image URL
+                </label>
                 <input
+                  id={CREATE_FIELD_IDS.imageUrl}
                   type="text"
                   inputMode="url"
+                  className="admin-form__control"
                   value={formState.imageUrl}
                   onChange={(event) => setFormState((prev) => ({ ...prev, imageUrl: event.target.value }))}
                   placeholder="https://images.example.com/item.jpg"
                 />
-              </label>
+              </div>
 
-              <label className="admin-checkbox">
-                <input
-                  type="checkbox"
-                  checked={formState.isActive}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, isActive: event.target.checked }))}
-                />
-                <span>Active in kiosk</span>
-              </label>
+              <div className="admin-form__row admin-form__row--checkbox">
+                <span className="admin-form__label">Status</span>
+                <label className="admin-form__checkbox" htmlFor={CREATE_FIELD_IDS.isActive}>
+                  <input
+                    id={CREATE_FIELD_IDS.isActive}
+                    type="checkbox"
+                    checked={formState.isActive}
+                    onChange={(event) => setFormState((prev) => ({ ...prev, isActive: event.target.checked }))}
+                  />
+                  <span>Active in kiosk</span>
+                </label>
+              </div>
             </div>
 
             <div className="admin-form__actions">

@@ -32,9 +32,9 @@
 - [x] Ensure cart interactions (scrolling content, totals visibility) remain intact.
 
 ### Phase 4 — Theme Refresh
-- [ ] Define the black/pink/white palette (hex values, usage guidelines).
-- [ ] Update global styles, gradients, and component accents to the new palette.
-- [ ] Verify contrast and accessibility implications.
+- [x] Define the black/pink/white palette (hex values, usage guidelines).
+- [x] Update global styles, gradients, and component accents to the new palette.
+- [x] Verify contrast and accessibility implications.
 
 ### Phase 5 — Validation & Regression Testing
 - [ ] Cross-check kiosk and admin interfaces across common breakpoints and zoom levels.
@@ -46,3 +46,5 @@
 - 2025-11-17 — Phase 2 complete. Designed a layout strategy that decouples the product column height from the cart column by restoring global flex layout, introducing dedicated kiosk column wrappers, and limiting viewport-height math to the cart only. Conceptually validated the approach against zoom scenarios (cart stays pinned; product column gains natural page scroll). Identified need to retire `--kiosk-column-height`, adjust sticky offsets, and potentially extract kiosk-specific styles into a dedicated module during implementation. Strategy approved to proceed.
 - 2025-11-17 — Phase 3 complete. Updated `client/src/App.tsx` to introduce `kiosk-layout__products` and `kiosk-layout__cart` wrappers so the product gallery and cart column can be controlled independently. Refined `client/src/App.css` to restore the flex-based shell, add new layout wrapper styles, and replace shared viewport height variables with cart-specific sticky offsets (`--layout-sticky-offset`, `--cart-max-height`). Confirmed the cart keeps its sticky behavior and internal scrolling while the product grid regains natural flow.
 - 2025-11-17 — Phase 3 follow-up. Restructured the kiosk view so the cart renders inside a new floating container: updated `App.tsx` to move `CartPanel` into a sibling `<aside>` (`kiosk-cart-float`) and refactored `App.css` with `--cart-width`/`--cart-float-height`, a flex-based `kiosk-layout`, and fixed positioning for large screens. The cart now floats independently, staying visible while products scroll beneath.
+- 2025-11-24 — Phase 3 follow-up. Tuned floating cart breakpoints in `App.css` with a responsive `--cart-gap` and `@media (max-width: 1040px)` overrides so the cart drops beneath the product grid when zoom narrows the viewport (e.g., 133% zoom), preventing overlap while keeping desktop behavior intact at standard zoom levels. Added padding adjustments to keep the full-width cart from introducing horizontal scroll.
+- 2025-11-24 — Phase 4 complete. Added theme variables (`--color-background`, `--color-accent`, etc.) to `App.css`, refreshed kiosk/admin surfaces to use the black/pink/white palette, and updated buttons, cards, and alerts with new gradients. Confirmed key text/background pairs meet WCAG AA contrast (e.g., #f5f5f8 on #050507 ≈ 14.4:1; #ff4fa7 on #11111a ≈ 5.7:1).
