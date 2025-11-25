@@ -9,6 +9,7 @@ type ProductSummary = {
   imageUrl: string | null;
   inventoryCount: number;
   isActive: boolean;
+  category: string;
 };
 
 type RetrievedProduct = {
@@ -21,6 +22,7 @@ type RetrievedProduct = {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  category: string;
 };
 
 type PurchaseItemInput = {
@@ -66,7 +68,8 @@ export async function listActiveProducts(client: PrismaClient = prisma): Promise
     price: centsToString(toCents(product.price)),
     imageUrl: product.imageUrl,
     inventoryCount: product.inventoryCount,
-    isActive: product.isActive
+    isActive: product.isActive,
+    category: product.category
   }));
 }
 
@@ -155,6 +158,7 @@ export async function listAllProducts(client: PrismaClient = prisma) {
     imageUrl: product.imageUrl,
     inventoryCount: product.inventoryCount,
     isActive: product.isActive,
+    category: product.category,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   }));
@@ -168,6 +172,7 @@ export async function createProduct(
     imageUrl?: string;
     inventoryCount: number;
     isActive?: boolean;
+    category: string;
   },
   client: PrismaClient = prisma
 ) {
@@ -178,7 +183,8 @@ export async function createProduct(
       price: parsePriceInput(input.price),
       imageUrl: input.imageUrl,
       inventoryCount: input.inventoryCount,
-      isActive: input.isActive ?? true
+      isActive: input.isActive ?? true,
+      category: input.category
     }
   });
 
@@ -190,6 +196,7 @@ export async function createProduct(
     imageUrl: product.imageUrl,
     inventoryCount: product.inventoryCount,
     isActive: product.isActive,
+    category: product.category,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };
@@ -204,6 +211,7 @@ export async function updateProduct(
     imageUrl?: string | null;
     inventoryCount?: number;
     isActive?: boolean;
+    category?: string;
   },
   client: PrismaClient = prisma
 ) {
@@ -215,6 +223,7 @@ export async function updateProduct(
   if (input.imageUrl !== undefined) data.imageUrl = input.imageUrl;
   if (input.inventoryCount !== undefined) data.inventoryCount = input.inventoryCount;
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.category !== undefined) data.category = input.category;
 
   const product = await client.product.update({
     where: { id: productId },
@@ -229,6 +238,7 @@ export async function updateProduct(
     imageUrl: product.imageUrl,
     inventoryCount: product.inventoryCount,
     isActive: product.isActive,
+    category: product.category,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };
@@ -270,6 +280,7 @@ export async function archiveProduct(
     imageUrl: product.imageUrl,
     inventoryCount: product.inventoryCount,
     isActive: product.isActive,
+    category: product.category,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };

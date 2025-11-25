@@ -38,6 +38,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-coffee',
       title: 'House Blend Coffee',
       description: 'Rich medium-roast coffee served hot or iced.',
+      category: 'Beverages',
       price: '2.50',
       inventoryCount: 54,
       imageUrl: '/house-mix-coffee.jpeg'
@@ -46,6 +47,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-energy',
       title: 'Lightning Energy Shot',
       description: 'High-caffeine energy shot for late-night study sessions.',
+      category: 'Beverages',
       price: '3.00',
       inventoryCount: 40,
       imageUrl: '/lightning-energy-shot.jpeg'
@@ -54,6 +56,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-sparkling',
       title: 'Citrus Sparkling Water',
       description: 'Refreshing sparkling water with natural citrus flavors.',
+      category: 'Beverages',
       price: '1.80',
       inventoryCount: 48,
       imageUrl: '/citrus-drink.jpeg'
@@ -62,6 +65,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-protein',
       title: 'Chocolate Protein Shake',
       description: 'Ready-to-drink protein shake packed with 20g of protein.',
+      category: 'Nutrition',
       price: '2.80',
       inventoryCount: 33,
       imageUrl: '/chocolate-protein-drink.jpeg'
@@ -70,6 +74,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-trailmix',
       title: 'Trail Mix Snack Pack',
       description: 'Roasted nuts, dried fruit, and dark chocolate chunks.',
+      category: 'Snacks',
       price: '2.20',
       inventoryCount: 49,
       imageUrl: '/trail-mix-snack-pack.jpeg'
@@ -78,6 +83,7 @@ export async function seedDatabase(prisma: PrismaClient) {
       id: 'demo-sandwich',
       title: 'Turkey Club Sandwich',
       description: 'Grab-and-go sandwich with roasted turkey and fresh veggies.',
+      category: 'Meals',
       price: '4.50',
       inventoryCount: 13,
       imageUrl: '/turkey-club-sandwich.jpeg'

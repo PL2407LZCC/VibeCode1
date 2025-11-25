@@ -22,6 +22,7 @@ model Product {
   description    String?
   price          Decimal               @db.Decimal(10, 2)
   imageUrl       String?
+  category       String                @default("uncategorized")
   isActive       Boolean               @default(true)
   inventoryCount Int                   @default(0)
   purchases      PurchaseItem[]

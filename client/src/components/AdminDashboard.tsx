@@ -25,6 +25,7 @@ type AdminProductUpdatePayload = {
   imageUrl?: string | null;
   inventoryCount?: number;
   isActive?: boolean;
+  category?: string;
 };
 
 type CreateFormState = {
@@ -34,6 +35,7 @@ type CreateFormState = {
   imageUrl: string;
   inventoryCount: string;
   isActive: boolean;
+  category: string;
 };
 
 const INITIAL_FORM: CreateFormState = {
@@ -42,7 +44,8 @@ const INITIAL_FORM: CreateFormState = {
   price: '',
   imageUrl: '',
   inventoryCount: '',
-  isActive: true
+  isActive: true,
+  category: ''
 };
 
 const CREATE_FIELD_IDS = {
@@ -52,7 +55,8 @@ const CREATE_FIELD_IDS = {
   description: 'create-description',
   imageFile: 'create-image-file',
   imageUrl: 'create-image-url',
-  isActive: 'create-is-active'
+  isActive: 'create-is-active',
+  category: 'create-category'
 } as const;
 
 const COLLAPSIBLE_SECTION_IDS = {
@@ -120,6 +124,7 @@ export function AdminDashboard() {
     const title = formState.title.trim();
     const price = Number(formState.price);
     const inventory = Number(formState.inventoryCount);
+    const category = formState.category.trim();
 
     if (!title) {
       handleStatus('error', 'Title is required.');
@@ -143,7 +148,8 @@ export function AdminDashboard() {
         price,
         imageUrl: formState.imageUrl.trim() || undefined,
         inventoryCount: inventory,
-        isActive: formState.isActive
+        isActive: formState.isActive,
+        category: category || 'Uncategorized'
       });
       setFormState(INITIAL_FORM);
       handleStatus('success', 'Product created successfully.');
@@ -285,6 +291,20 @@ export function AdminDashboard() {
                       onChange={(event) => setFormState((prev) => ({ ...prev, price: event.target.value }))}
                       placeholder="3.50"
                       required
+                    />
+                  </div>
+
+                  <div className="admin-form__row">
+                    <label htmlFor={CREATE_FIELD_IDS.category} className="admin-form__label">
+                      Category
+                    </label>
+                    <input
+                      id={CREATE_FIELD_IDS.category}
+                      type="text"
+                      className="admin-form__control"
+                      value={formState.category}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
+                      placeholder="Beverages"
                     />
                   </div>
 
@@ -556,7 +576,8 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
     price: product.price.toFixed(2),
     imageUrl: product.imageUrl ?? '',
     inventoryCount: product.inventoryCount.toString(),
-    isActive: product.isActive
+    isActive: product.isActive,
+    category: product.category
   });
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -566,6 +587,7 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
     const title = formState.title.trim();
     const price = Number(formState.price);
     const inventory = Number(formState.inventoryCount);
+    const category = formState.category.trim();
 
     if (!title) {
       onStatus('error', 'Title is required.');
@@ -589,7 +611,8 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
         price,
         imageUrl: formState.imageUrl.trim() || null,
         inventoryCount: inventory,
-        isActive: formState.isActive
+        isActive: formState.isActive,
+        category: category || 'Uncategorized'
       });
       onStatus('success', `${title} updated.`);
       setIsEditing(false);
@@ -625,7 +648,7 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
         <div>
           <h3>{product.title}</h3>
           <p className="admin-product__meta">
-            {product.isActive ? 'Active' : 'Hidden'} · {product.inventoryCount} in stock
+            {product.isActive ? 'Active' : 'Hidden'} · {product.inventoryCount} in stock · {product.category}
           </p>
         </div>
         <div className="admin-product__actions">
@@ -669,6 +692,14 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
                 value={formState.price}
                 onChange={(event) => setFormState((prev) => ({ ...prev, price: event.target.value }))}
                 required
+              />
+            </label>
+            <label className="admin-field">
+              <span>Category</span>
+              <input
+                type="text"
+                value={formState.category}
+                onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
               />
             </label>
             <label className="admin-field">
@@ -747,6 +778,10 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
             <div>
               <dt>Inventory</dt>
               <dd>{product.inventoryCount}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{product.category}</dd>
             </div>
             <div>
               <dt>Updated</dt>

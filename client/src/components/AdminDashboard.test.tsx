@@ -44,7 +44,8 @@ describe('AdminDashboard', () => {
           inventoryCount: 5,
           isActive: true,
           createdAt: '2025-11-07T10:00:00.000Z',
-          updatedAt: '2025-11-07T10:00:00.000Z'
+          updatedAt: '2025-11-07T10:00:00.000Z',
+          category: 'Beverages'
         }
       ]
     };
@@ -59,6 +60,17 @@ describe('AdminDashboard', () => {
       totalTransactions: 3,
       totalRevenue: 42,
       itemsSold: 9,
+      lifetime: { revenue: 42, transactions: 3, itemsSold: 9 },
+      period: {
+        current: { start: '2025-11-01', end: '2025-11-07' },
+        previous: { start: '2025-10-25', end: '2025-10-31' }
+      },
+      summary: {
+        revenue: { current: 30, previous: 25, deltaAbsolute: 5, deltaPercent: 20 },
+        transactions: { current: 2, previous: 1, deltaAbsolute: 1, deltaPercent: 100 },
+        itemsSold: { current: 7, previous: 5, deltaAbsolute: 2, deltaPercent: 40 },
+        averageOrderValue: { current: 15, previous: 12.5, deltaAbsolute: 2.5, deltaPercent: 20 }
+      },
       daily: [
         { date: '2025-11-05', total: 12, transactions: 1 },
         { date: '2025-11-06', total: 18, transactions: 2 }
@@ -67,10 +79,23 @@ describe('AdminDashboard', () => {
         { weekStart: '2025-10-13', total: 40, transactions: 5 },
         { weekStart: '2025-10-20', total: 52, transactions: 6 }
       ],
+      hourlyTrend: [
+        { hour: '08:00', total: 12, transactions: 1 },
+        { hour: '09:00', total: 18, transactions: 2 }
+      ],
+      categoryMix: [
+        { category: 'Beverages', quantity: 8, revenue: 20.4, revenueShare: 70, quantityShare: 80 },
+        { category: 'Snacks', quantity: 2, revenue: 5, revenueShare: 30, quantityShare: 20 }
+      ],
       topProducts: [
         { productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 },
         { productId: 'sparkling-water', title: 'Sparkling Water', quantity: 3, revenue: 8.4 }
-      ]
+      ],
+      highlights: {
+        bestDay: { date: '2025-11-06', total: 18, transactions: 2 },
+        slowDay: { date: '2025-11-05', total: 12, transactions: 1 }
+      },
+      alerts: ['Average order value increased 20% week-over-week.']
     };
 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -100,7 +125,8 @@ describe('AdminDashboard', () => {
               inventoryCount: body.inventoryCount,
               isActive: body.isActive ?? true,
               createdAt: '2025-11-07T12:00:00.000Z',
-              updatedAt: '2025-11-07T12:00:00.000Z'
+              updatedAt: '2025-11-07T12:00:00.000Z',
+              category: body.category ?? 'Uncategorized'
             }
           ]
         };
@@ -181,7 +207,8 @@ describe('AdminDashboard', () => {
           inventoryCount: 5,
           isActive: true,
           createdAt: '2025-11-07T10:00:00.000Z',
-          updatedAt: '2025-11-07T10:00:00.000Z'
+          updatedAt: '2025-11-07T10:00:00.000Z',
+          category: 'Beverages'
         },
         {
           id: 'energy-drink',
@@ -192,7 +219,8 @@ describe('AdminDashboard', () => {
           inventoryCount: 12,
           isActive: true,
           createdAt: '2025-11-07T11:00:00.000Z',
-          updatedAt: '2025-11-07T11:00:00.000Z'
+          updatedAt: '2025-11-07T11:00:00.000Z',
+          category: 'Beverages'
         }
       ]
     };
@@ -203,7 +231,22 @@ describe('AdminDashboard', () => {
       itemsSold: 9,
       daily: [],
       weekly: [],
-      topProducts: [{ productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 }]
+      topProducts: [{ productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 }],
+      hourlyTrend: [],
+      categoryMix: [],
+      lifetime: { revenue: 42, transactions: 3, itemsSold: 9 },
+      period: {
+        current: { start: '2025-11-01', end: '2025-11-07' },
+        previous: { start: '2025-10-25', end: '2025-10-31' }
+      },
+      summary: {
+        revenue: { current: 42, previous: 30, deltaAbsolute: 12, deltaPercent: 40 },
+        transactions: { current: 3, previous: 2, deltaAbsolute: 1, deltaPercent: 50 },
+        itemsSold: { current: 9, previous: 6, deltaAbsolute: 3, deltaPercent: 50 },
+        averageOrderValue: { current: 14, previous: 12, deltaAbsolute: 2, deltaPercent: 16.7 }
+      },
+      highlights: { bestDay: null, slowDay: null },
+      alerts: []
     };
 
     const configPayload = {
@@ -288,7 +331,8 @@ describe('AdminDashboard', () => {
           inventoryCount: 5,
           isActive: true,
           createdAt: '2025-11-07T10:00:00.000Z',
-          updatedAt: '2025-11-07T10:00:00.000Z'
+          updatedAt: '2025-11-07T10:00:00.000Z',
+          category: 'Beverages'
         }
       ]
     };
@@ -305,7 +349,22 @@ describe('AdminDashboard', () => {
       itemsSold: 9,
       daily: [],
       weekly: [],
-      topProducts: []
+      topProducts: [],
+      hourlyTrend: [],
+      categoryMix: [],
+      lifetime: { revenue: 42, transactions: 3, itemsSold: 9 },
+      period: {
+        current: { start: '2025-11-01', end: '2025-11-07' },
+        previous: { start: '2025-10-25', end: '2025-10-31' }
+      },
+      summary: {
+        revenue: { current: 42, previous: 40, deltaAbsolute: 2, deltaPercent: 5 },
+        transactions: { current: 3, previous: 3, deltaAbsolute: 0, deltaPercent: 0 },
+        itemsSold: { current: 9, previous: 9, deltaAbsolute: 0, deltaPercent: 0 },
+        averageOrderValue: { current: 14, previous: 13.3, deltaAbsolute: 0.7, deltaPercent: 5 }
+      },
+      highlights: { bestDay: null, slowDay: null },
+      alerts: []
     };
 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

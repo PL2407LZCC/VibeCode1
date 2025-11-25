@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AdminProduct, KioskConfig, SalesStats } from '../types';
+import type {
+  AdminProduct,
+  KioskConfig,
+  SalesStats,
+  SalesCategoryMixEntry,
+  SalesHighlightDay,
+  SalesHourlyBucket,
+  SalesSummaryMetric
+} from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 const TOKEN_MISSING_MESSAGE =
@@ -12,6 +20,7 @@ type CreateProductInput = {
   imageUrl?: string;
   inventoryCount: number;
   isActive?: boolean;
+  category: string;
 };
 
 type UpdateProductInput = {
@@ -21,6 +30,7 @@ type UpdateProductInput = {
   imageUrl?: string | null;
   inventoryCount?: number;
   isActive?: boolean;
+  category?: string;
 };
 
 type AdminDashboardState = {
@@ -46,10 +56,33 @@ const parseAdminProduct = (payload: any): AdminProduct => ({
   inventoryCount: Number(payload.inventoryCount ?? 0),
   isActive: Boolean(payload.isActive),
   createdAt: String(payload.createdAt ?? ''),
-  updatedAt: String(payload.updatedAt ?? '')
+  updatedAt: String(payload.updatedAt ?? ''),
+  category: typeof payload.category === 'string' && payload.category.trim().length > 0 ? payload.category : 'Uncategorized'
 });
 
 const parseSalesStats = (payload: any): SalesStats => {
+  const parseSummaryMetric = (metric: any): SalesSummaryMetric => ({
+    current: Number(metric?.current ?? 0),
+    previous: Number(metric?.previous ?? 0),
+    deltaAbsolute: Number(metric?.deltaAbsolute ?? 0),
+    deltaPercent:
+      metric?.deltaPercent === null || metric?.deltaPercent === undefined
+        ? null
+        : Number(metric?.deltaPercent)
+  });
+
+  const parseHighlightDay = (value: any): SalesHighlightDay | null => {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    return {
+      date: String(value.date ?? ''),
+      total: Number(value.total ?? 0),
+      transactions: Number(value.transactions ?? 0)
+    };
+  };
+
   const toDailyBucket = (bucket: any) => ({
     date: String(bucket?.date ?? ''),
     total: Number(bucket?.total ?? 0),
@@ -72,14 +105,65 @@ const parseSalesStats = (payload: any): SalesStats => {
   const daily = Array.isArray(payload?.daily) ? payload.daily.map(toDailyBucket) : [];
   const weekly = Array.isArray(payload?.weekly) ? payload.weekly.map(toWeeklyBucket) : [];
   const topProducts = Array.isArray(payload?.topProducts) ? payload.topProducts.map(toTopProduct) : [];
+  const hourlyTrend: SalesHourlyBucket[] = Array.isArray(payload?.hourlyTrend)
+    ? payload.hourlyTrend.map((bucket: any) => ({
+        hour: String(bucket?.hour ?? ''),
+        total: Number(bucket?.total ?? 0),
+        transactions: Number(bucket?.transactions ?? 0)
+      }))
+    : [];
+
+  const categoryMix: SalesCategoryMixEntry[] = Array.isArray(payload?.categoryMix)
+    ? payload.categoryMix.map((entry: any) => ({
+        category: typeof entry?.category === 'string' && entry.category.trim().length > 0 ? entry.category : 'Uncategorized',
+        quantity: Number(entry?.quantity ?? 0),
+        revenue: Number(entry?.revenue ?? 0),
+        revenueShare: Number(entry?.revenueShare ?? 0),
+        quantityShare: Number(entry?.quantityShare ?? 0)
+      }))
+    : [];
+
+  const alerts = Array.isArray(payload?.alerts)
+    ? payload.alerts.filter((alert: unknown): alert is string => typeof alert === 'string' && alert.trim().length > 0)
+    : [];
+
+  const summaryPayload = payload?.summary ?? {};
 
   return {
     totalTransactions: Number(payload?.totalTransactions ?? 0),
     totalRevenue: Number(payload?.totalRevenue ?? 0),
     itemsSold: Number(payload?.itemsSold ?? 0),
+    lifetime: {
+      revenue: Number(payload?.lifetime?.revenue ?? payload?.totalRevenue ?? 0),
+      transactions: Number(payload?.lifetime?.transactions ?? payload?.totalTransactions ?? 0),
+      itemsSold: Number(payload?.lifetime?.itemsSold ?? payload?.itemsSold ?? 0)
+    },
+    period: {
+      current: {
+        start: String(payload?.period?.current?.start ?? ''),
+        end: String(payload?.period?.current?.end ?? '')
+      },
+      previous: {
+        start: String(payload?.period?.previous?.start ?? ''),
+        end: String(payload?.period?.previous?.end ?? '')
+      }
+    },
+    summary: {
+      revenue: parseSummaryMetric(summaryPayload.revenue),
+      transactions: parseSummaryMetric(summaryPayload.transactions),
+      itemsSold: parseSummaryMetric(summaryPayload.itemsSold),
+      averageOrderValue: parseSummaryMetric(summaryPayload.averageOrderValue)
+    },
     daily,
     weekly,
-    topProducts
+    hourlyTrend,
+    categoryMix,
+    topProducts,
+    highlights: {
+      bestDay: parseHighlightDay(payload?.highlights?.bestDay),
+      slowDay: parseHighlightDay(payload?.highlights?.slowDay)
+    },
+    alerts
   };
 };
 
