@@ -97,7 +97,7 @@ export type SalesCategoryMixEntry = {
 
 export type SalesHourlyBucket = {
   hour: string;
-  total: number;
+  percentage: number;
   transactions: number;
 };
 

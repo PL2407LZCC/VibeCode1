@@ -113,18 +113,35 @@ const renderHourlyTrend = (entries: SalesHourlyBucket[]) => {
     return <p className="sales-empty">No hourly trend yet.</p>;
   }
 
-  const filtered = entries.filter((entry) => entry.total > 0 || entry.transactions > 0);
-  const dataset = filtered.length > 0 ? filtered : entries;
-  const maxValue = dataset.reduce((max, entry) => Math.max(max, entry.total), 0);
+  const nonEmpty = entries.filter((entry) => entry.percentage > 0 || entry.transactions > 0);
+  const dataset = nonEmpty.length > 0 ? nonEmpty : entries;
+  const maxPercentage = dataset.reduce((max, entry) => Math.max(max, entry.percentage), 0);
 
-  return renderBarList(
-    dataset.map((entry) => ({
-      id: entry.hour,
-      label: entry.hour,
-      value: entry.total,
-      transactions: entry.transactions
-    })),
-    maxValue
+  const formatPercentageValue = (value: number) => {
+    if (!Number.isFinite(value)) {
+      return '0';
+    }
+    const rounded = Number(value.toFixed(1));
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+
+  return (
+    <ul className="admin-chart" role="list">
+      {dataset.map((entry) => {
+        const percentValue = Number.isFinite(entry.percentage) ? entry.percentage : 0;
+        const width = maxPercentage === 0 ? 0 : Math.round((percentValue / maxPercentage) * 100);
+        const percentLabel = formatPercentageValue(percentValue);
+        return (
+          <li key={entry.hour}>
+            <span className="admin-chart__label">{entry.hour}</span>
+            <div className="admin-chart__bar" aria-label={`${percentLabel}% of transactions`}>
+              <span style={{ width: `${width}%` }} />
+            </div>
+            <span className="admin-chart__value">{percentLabel}% · {numberFormatter.format(entry.transactions)} tx</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 };
 

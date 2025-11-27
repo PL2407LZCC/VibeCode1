@@ -80,8 +80,8 @@ describe('AdminDashboard', () => {
         { weekStart: '2025-10-20', total: 52, transactions: 6 }
       ],
       hourlyTrend: [
-        { hour: '08:00', total: 12, transactions: 1 },
-        { hour: '09:00', total: 18, transactions: 2 }
+        { hour: '08:00', percentage: 12.5, transactions: 1 },
+        { hour: '09:00', percentage: 18.5, transactions: 2 }
       ],
       categoryMix: [
         { category: 'Beverages', quantity: 8, revenue: 20.4, revenueShare: 70, quantityShare: 80 },

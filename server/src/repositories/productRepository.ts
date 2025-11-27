@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import prisma from '../lib/prisma';
 
 type ProductSummary = {
@@ -215,15 +215,15 @@ export async function updateProduct(
   },
   client: PrismaClient = prisma
 ) {
-  const data: Record<string, unknown> = {};
-
-  if (input.title !== undefined) data.title = input.title;
-  if (input.description !== undefined) data.description = input.description;
-  if (input.price !== undefined) data.price = parsePriceInput(input.price);
-  if (input.imageUrl !== undefined) data.imageUrl = input.imageUrl;
-  if (input.inventoryCount !== undefined) data.inventoryCount = input.inventoryCount;
-  if (input.isActive !== undefined) data.isActive = input.isActive;
-  if (input.category !== undefined) data.category = input.category;
+  const data = Prisma.validator<Prisma.ProductUpdateArgs['data']>()({
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    ...(input.price !== undefined ? { price: parsePriceInput(input.price) } : {}),
+    ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+    ...(input.inventoryCount !== undefined ? { inventoryCount: input.inventoryCount } : {}),
+    ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+    ...(input.category !== undefined ? { category: input.category } : {})
+  });
 
   const product = await client.product.update({
     where: { id: productId },

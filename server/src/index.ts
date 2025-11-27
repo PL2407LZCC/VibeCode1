@@ -57,6 +57,11 @@ type ProductSalesRow = {
   revenue: unknown;
 };
 
+type HourlyTransactionsRow = {
+  hour: unknown;
+  transactions: unknown;
+};
+
 const normalizeDecimal = (value: unknown) => {
   if (value == null) {
     return 0;
@@ -490,7 +495,8 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       relatedPurchaseItems,
       productCatalog,
       productSalesLast7DaysRows,
-      productSalesLifetimeRows
+      productSalesLifetimeRows,
+      hourlyTransactionsRows
     ] = await Promise.all([
       prisma.purchase.aggregate({
         _sum: { totalAmount: true },
@@ -557,8 +563,17 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
                SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
         FROM "purchase_items"
         GROUP BY "purchase_items"."productId"
+      `,
+      prisma.$queryRaw<HourlyTransactionsRow[]>`
+        SELECT EXTRACT(HOUR FROM "purchases"."createdAt")::int AS "hour",
+               COUNT(*)::bigint AS "transactions"
+        FROM "purchases"
+        GROUP BY 1
+        ORDER BY 1
       `
     ]);
+
+    const lifetimeTransactions = purchaseAggregate._count._all ?? 0;
 
     const currentDailyBuckets = new Map<string, { total: number; transactions: number }>();
     const currentDailyKeys: string[] = [];
@@ -572,7 +587,6 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
 
     const currentWeeklyBuckets = new Map<string, { total: number; transactions: number }>();
     const currentWeeklyKeys: string[] = [];
-    const hourlyBuckets = Array.from({ length: 24 }, (_, hour) => ({ hour, total: 0, transactions: 0 }));
 
     for (let weekOffset = 0; weekOffset < weeklyWindowWeeks; weekOffset += 1) {
       const weekStart = addDaysUtc(currentWeeklyStart, weekOffset * 7);
@@ -606,9 +620,6 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
           bucket.transactions += 1;
         }
 
-        const hourBucket = hourlyBuckets[purchase.createdAt.getUTCHours()];
-        hourBucket.total += amount;
-        hourBucket.transactions += 1;
       } else if (purchaseTime >= previousDailyStartMs && purchaseTime < currentDailyStartMs) {
         previousRevenue += amount;
         previousTransactions += 1;
@@ -778,10 +789,27 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       };
     });
 
-    const hourlyTrend = hourlyBuckets.map((bucket) => ({
-      hour: `${bucket.hour.toString().padStart(2, '0')}:00`,
-      total: Number(bucket.total.toFixed(2)),
-      transactions: bucket.transactions
+    const hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({ hour, transactions: 0 }));
+
+    for (const row of hourlyTransactionsRows) {
+      const hourValue = Number(row.hour);
+      if (!Number.isFinite(hourValue)) {
+        continue;
+      }
+
+      const hourIndex = Math.trunc(hourValue);
+      if (hourIndex < 0 || hourIndex > 23) {
+        continue;
+      }
+
+      const transactionsRounded = Math.max(0, Math.round(normalizeDecimal(row.transactions)));
+      hourlyTotals[hourIndex].transactions = transactionsRounded;
+    }
+
+    const hourlyTrend = hourlyTotals.map(({ hour, transactions }) => ({
+      hour: `${hour.toString().padStart(2, '0')}:00`,
+      percentage: lifetimeTransactions === 0 ? 0 : Number(((transactions / lifetimeTransactions) * 100).toFixed(1)),
+      transactions
     }));
 
     let bestDayRaw: { date: string; total: number; transactions: number } | null = null;
@@ -852,7 +880,6 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
     }));
 
     const lifetimeRevenue = normalizeDecimal(purchaseAggregate._sum.totalAmount);
-    const lifetimeTransactions = purchaseAggregate._count._all ?? 0;
     const lifetimeItemsSold = purchaseItemAggregate._sum.quantity ?? 0;
 
     res.json({

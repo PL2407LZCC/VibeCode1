@@ -19,6 +19,7 @@ const mockProducts = {
 describe('App kiosk flow', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('loads products and allows adding to cart', async () => {
@@ -45,10 +46,10 @@ describe('App kiosk flow', () => {
     });
   });
 
-  it('shows error banner and allows retry when fetch fails', async () => {
+  it('keeps loading state until automatic recovery after a transient failure', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockRejectedValueOnce(new Error('network'))
+      .mockRejectedValueOnce(new Error('booting'))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => mockProducts
@@ -57,14 +58,20 @@ describe('App kiosk flow', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await waitFor(
+      () => {
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 4500 }
+    );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add to cart/i })).toBeEnabled();
     });
   });
 });

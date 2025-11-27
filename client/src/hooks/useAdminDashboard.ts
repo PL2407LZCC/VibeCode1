@@ -130,7 +130,7 @@ const parseSalesStats = (payload: any): SalesStats => {
   const hourlyTrend: SalesHourlyBucket[] = Array.isArray(payload?.hourlyTrend)
     ? payload.hourlyTrend.map((bucket: any) => ({
         hour: String(bucket?.hour ?? ''),
-        total: Number(bucket?.total ?? 0),
+        percentage: Number(bucket?.percentage ?? 0),
         transactions: Number(bucket?.transactions ?? 0)
       }))
     : [];

@@ -193,6 +193,13 @@ describe('API routes', () => {
         { productId: 'demo-coffee', quantity: 8, revenue: 20 },
         { productId: 'sparkling-water', quantity: 4, revenue: 12 },
         { productId: 'granola-bar', quantity: 5, revenue: 10 }
+      ])
+      .mockResolvedValueOnce([
+        { hour: 8, transactions: 40 },
+        { hour: 9, transactions: 5 },
+        { hour: 11, transactions: 20 },
+        { hour: 18, transactions: 30 },
+        { hour: 20, transactions: 25 }
       ]);
     prismaMock.product.findMany.mockResolvedValue([
       {
@@ -384,9 +391,9 @@ describe('API routes', () => {
 
     expect(Array.isArray(body.hourlyTrend)).toBe(true);
     expect(body.hourlyTrend).toHaveLength(24);
-    expect(body.hourlyTrend[8]).toEqual({ hour: '08:00', total: 50, transactions: 1 });
-    expect(body.hourlyTrend[11]).toEqual({ hour: '11:00', total: 20, transactions: 1 });
-    expect(body.hourlyTrend[18]).toEqual({ hour: '18:00', total: 30, transactions: 1 });
+    expect(body.hourlyTrend[8]).toEqual({ hour: '08:00', percentage: 33.3, transactions: 40 });
+    expect(body.hourlyTrend[11]).toEqual({ hour: '11:00', percentage: 16.7, transactions: 20 });
+    expect(body.hourlyTrend[18]).toEqual({ hour: '18:00', percentage: 25, transactions: 30 });
 
     expect(Array.isArray(body.topProducts)).toBe(true);
     expect(body.topProducts[0]).toEqual({ productId: 'demo-coffee', title: 'Coffee', quantity: 8, revenue: 20 });
@@ -462,7 +469,7 @@ describe('API routes', () => {
     expect(prismaMock.purchase.aggregate).toHaveBeenCalled();
     expect(prismaMock.purchase.findMany).toHaveBeenCalled();
     expect(prismaMock.purchaseItem.findMany).toHaveBeenCalled();
-    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(3);
   });
 
   it('returns zeroed stats and alert when no transactions exist', async () => {
@@ -471,7 +478,8 @@ describe('API routes', () => {
     prismaMock.purchase.findMany.mockResolvedValueOnce([]);
     prismaMock.purchaseItem.findMany.mockResolvedValueOnce([]);
     prismaMock.product.findMany.mockResolvedValueOnce([]);
-    prismaMock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    prismaMock.$queryRaw.mockReset();
+    prismaMock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const response = await request(app)
       .get('/admin/stats/sales')
@@ -489,7 +497,7 @@ describe('API routes', () => {
     expect(body.daily).toHaveLength(7);
     expect(body.daily.every((entry: { total: number; transactions: number }) => entry.total === 0 && entry.transactions === 0)).toBe(true);
     expect(body.hourlyTrend).toHaveLength(24);
-    expect(body.hourlyTrend.every((entry: { total: number; transactions: number }) => entry.total === 0 && entry.transactions === 0)).toBe(true);
+    expect(body.hourlyTrend.every((entry: { percentage: number; transactions: number }) => entry.percentage === 0 && entry.transactions === 0)).toBe(true);
     expect(body.categoryMix).toEqual([]);
     expect(body.productPerformance).toEqual([]);
   });

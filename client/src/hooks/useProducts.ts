@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Product } from '../types';
 
 export type ProductsState = {
@@ -20,6 +20,8 @@ const FALLBACK_PRODUCTS: Product[] = [
 ];
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+const RETRY_DELAYS_MS = [750, 1500, 3000, 6000];
 
 const resolveImageUrl = (rawUrl: unknown) => {
   if (typeof rawUrl !== 'string' || rawUrl.trim().length === 0) {
@@ -47,9 +49,29 @@ export function useProducts(): ProductsState {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProducts = useCallback(async () => {
+  const retryStateRef = useRef<{ attempt: number; timeoutId: ReturnType<typeof setTimeout> | null }>({
+    attempt: 0,
+    timeoutId: null
+  });
+  const initialLoadRef = useRef(true);
+
+  const clearScheduledRetry = useCallback(() => {
+    if (retryStateRef.current.timeoutId !== null) {
+      clearTimeout(retryStateRef.current.timeoutId);
+      retryStateRef.current.timeoutId = null;
+    }
+  }, []);
+
+  const fetchProducts = useCallback(async ({ isAutoRetry = false }: { isAutoRetry?: boolean } = {}) => {
+    if (!isAutoRetry) {
+      retryStateRef.current.attempt = 0;
+      clearScheduledRetry();
+    }
+
     setIsLoading(true);
-    setError(null);
+    if (!isAutoRetry) {
+      setError(null);
+    }
 
     try {
       const response = await fetch(`${API_URL}/products`);
@@ -70,23 +92,57 @@ export function useProducts(): ProductsState {
         : [];
 
       setProducts(parsed.length > 0 ? parsed : FALLBACK_PRODUCTS);
+      retryStateRef.current.attempt = 0;
+      clearScheduledRetry();
+      initialLoadRef.current = false;
+      setError(null);
     } catch (err) {
       console.error('Failed to fetch products', err);
-      setError(err instanceof Error ? err.message : 'Unknown error fetching products');
-      setProducts(FALLBACK_PRODUCTS);
+      const attempt = retryStateRef.current.attempt;
+      const willRetry = attempt < RETRY_DELAYS_MS.length;
+      const isInitialLoad = initialLoadRef.current;
+
+      const message = err instanceof Error ? err.message : 'Unknown error fetching products';
+      const shouldSurfaceError = !isInitialLoad || !willRetry;
+
+      if (shouldSurfaceError) {
+        setError(message);
+      }
+
+      setProducts((previous) => {
+        if (previous.length > 0) {
+          return previous;
+        }
+        return shouldSurfaceError ? FALLBACK_PRODUCTS : [];
+      });
+
+      clearScheduledRetry();
+
+      if (willRetry) {
+        const delay = RETRY_DELAYS_MS[attempt];
+        retryStateRef.current.attempt += 1;
+        retryStateRef.current.timeoutId = setTimeout(() => {
+          void fetchProducts({ isAutoRetry: true });
+        }, delay);
+      }
     } finally {
-      setIsLoading(false);
+      const shouldKeepLoading = initialLoadRef.current && retryStateRef.current.timeoutId !== null;
+      setIsLoading(shouldKeepLoading ? true : false);
     }
-  }, []);
+  }, [clearScheduledRetry]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    void fetchProducts();
+
+    return () => {
+      clearScheduledRetry();
+    };
+  }, [fetchProducts, clearScheduledRetry]);
 
   return {
     products,
     isLoading,
     error,
-    refetch: fetchProducts
+    refetch: () => fetchProducts()
   };
 }
