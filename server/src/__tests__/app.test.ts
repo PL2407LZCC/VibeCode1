@@ -29,7 +29,8 @@ const {
     },
     product: {
       findMany: vi.fn()
-    }
+    },
+    $queryRaw: vi.fn()
   };
 
   return {
@@ -182,10 +183,42 @@ describe('API routes', () => {
         product: { category: 'Beverages' }
       }
     ]);
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([
+        { productId: 'demo-coffee', quantity: 6, revenue: 15 },
+        { productId: 'sparkling-water', quantity: 4, revenue: 12 },
+        { productId: 'granola-bar', quantity: 5, revenue: 10 }
+      ])
+      .mockResolvedValueOnce([
+        { productId: 'demo-coffee', quantity: 8, revenue: 20 },
+        { productId: 'sparkling-water', quantity: 4, revenue: 12 },
+        { productId: 'granola-bar', quantity: 5, revenue: 10 }
+      ]);
     prismaMock.product.findMany.mockResolvedValue([
-      { id: 'demo-coffee', title: 'Coffee' },
-      { id: 'sparkling-water', title: 'Sparkling Water' },
-      { id: 'granola-bar', title: 'Granola Bar' }
+      {
+        id: 'demo-coffee',
+        title: 'Coffee',
+        category: 'Beverages',
+        inventoryCount: 18,
+        isActive: true,
+        price: 2.5
+      },
+      {
+        id: 'sparkling-water',
+        title: 'Sparkling Water',
+        category: 'Beverages',
+        inventoryCount: 30,
+        isActive: true,
+        price: 3
+      },
+      {
+        id: 'granola-bar',
+        title: 'Granola Bar',
+        category: 'Snacks',
+        inventoryCount: 45,
+        isActive: true,
+        price: 2
+      }
     ]);
 
     process.env.ADMIN_API_KEY = 'test-secret';
@@ -384,9 +417,52 @@ describe('API routes', () => {
       }
     ]);
 
+    expect(body.productPerformance).toEqual([
+      {
+        productId: 'demo-coffee',
+        title: 'Coffee',
+        category: 'Beverages',
+        isActive: true,
+        inventoryCount: 18,
+        price: 2.5,
+        sales: {
+          last7Days: { quantity: 6, revenue: 15 },
+          last30Days: { quantity: 8, revenue: 20 },
+          lifetime: { quantity: 8, revenue: 20 }
+        }
+      },
+      {
+        productId: 'sparkling-water',
+        title: 'Sparkling Water',
+        category: 'Beverages',
+        isActive: true,
+        inventoryCount: 30,
+        price: 3,
+        sales: {
+          last7Days: { quantity: 4, revenue: 12 },
+          last30Days: { quantity: 4, revenue: 12 },
+          lifetime: { quantity: 4, revenue: 12 }
+        }
+      },
+      {
+        productId: 'granola-bar',
+        title: 'Granola Bar',
+        category: 'Snacks',
+        isActive: true,
+        inventoryCount: 45,
+        price: 2,
+        sales: {
+          last7Days: { quantity: 5, revenue: 10 },
+          last30Days: { quantity: 5, revenue: 10 },
+          lifetime: { quantity: 5, revenue: 10 }
+        }
+      }
+    ]);
+
     expect(prismaMock.purchase.aggregate).toHaveBeenCalled();
     expect(prismaMock.purchase.findMany).toHaveBeenCalled();
     expect(prismaMock.purchaseItem.findMany).toHaveBeenCalled();
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('returns zeroed stats and alert when no transactions exist', async () => {
@@ -395,6 +471,7 @@ describe('API routes', () => {
     prismaMock.purchase.findMany.mockResolvedValueOnce([]);
     prismaMock.purchaseItem.findMany.mockResolvedValueOnce([]);
     prismaMock.product.findMany.mockResolvedValueOnce([]);
+    prismaMock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const response = await request(app)
       .get('/admin/stats/sales')
@@ -414,6 +491,7 @@ describe('API routes', () => {
     expect(body.hourlyTrend).toHaveLength(24);
     expect(body.hourlyTrend.every((entry: { total: number; transactions: number }) => entry.total === 0 && entry.transactions === 0)).toBe(true);
     expect(body.categoryMix).toEqual([]);
+    expect(body.productPerformance).toEqual([]);
   });
 
   it('allows admins to upload images and returns file metadata', async () => {

@@ -91,6 +91,34 @@ describe('AdminDashboard', () => {
         { productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 },
         { productId: 'sparkling-water', title: 'Sparkling Water', quantity: 3, revenue: 8.4 }
       ],
+      productPerformance: [
+        {
+          productId: 'demo-coffee',
+          title: 'Filter Coffee',
+          category: 'Beverages',
+          isActive: true,
+          inventoryCount: 5,
+          price: 2.5,
+          sales: {
+            last7Days: { quantity: 3, revenue: 7.5 },
+            last30Days: { quantity: 5, revenue: 12 },
+            lifetime: { quantity: 12, revenue: 28.5 }
+          }
+        },
+        {
+          productId: 'sparkling-water',
+          title: 'Sparkling Water',
+          category: 'Beverages',
+          isActive: true,
+          inventoryCount: 18,
+          price: 2.8,
+          sales: {
+            last7Days: { quantity: 2, revenue: 5.6 },
+            last30Days: { quantity: 3, revenue: 8.4 },
+            lifetime: { quantity: 6, revenue: 16.8 }
+          }
+        }
+      ],
       highlights: {
         bestDay: { date: '2025-11-06', total: 18, transactions: 2 },
         slowDay: { date: '2025-11-05', total: 12, transactions: 1 }
@@ -189,7 +217,16 @@ describe('AdminDashboard', () => {
     expect(screen.getByText(/product created successfully/i)).toBeTruthy();
 
     await expandSection(/sales overview/i);
-    expect(screen.getByText(/top products/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText(/Revenue \(7 days\)/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/Avg\. order value/i)).toBeTruthy();
+    expect(screen.getByText(/Average order value increased 20% week-over-week\./i)).toBeTruthy();
+    expect(screen.getByText(/Top products/i)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: /Product performance/i }));
+    expect(screen.getByRole('columnheader', { name: /Last 7 days/i })).toBeTruthy();
+    expect(screen.getByText(/3 sold · €7\.50/)).toBeTruthy();
+    expect(screen.getByText(/5 sold · 5 in stock/i)).toBeTruthy();
   });
 
   it('archives a product from the catalog', async () => {
@@ -234,6 +271,21 @@ describe('AdminDashboard', () => {
       topProducts: [{ productId: 'demo-coffee', title: 'Filter Coffee', quantity: 5, revenue: 12 }],
       hourlyTrend: [],
       categoryMix: [],
+      productPerformance: [
+        {
+          productId: 'demo-coffee',
+          title: 'Filter Coffee',
+          category: 'Beverages',
+          isActive: true,
+          inventoryCount: 5,
+          price: 2.5,
+          sales: {
+            last7Days: { quantity: 2, revenue: 5 },
+            last30Days: { quantity: 5, revenue: 12 },
+            lifetime: { quantity: 18, revenue: 43 }
+          }
+        }
+      ],
       lifetime: { revenue: 42, transactions: 3, itemsSold: 9 },
       period: {
         current: { start: '2025-11-01', end: '2025-11-07' },
@@ -350,6 +402,7 @@ describe('AdminDashboard', () => {
       daily: [],
       weekly: [],
       topProducts: [],
+      productPerformance: [],
       hourlyTrend: [],
       categoryMix: [],
       lifetime: { revenue: 42, transactions: 3, itemsSold: 9 },

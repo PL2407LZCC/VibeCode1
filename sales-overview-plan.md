@@ -16,10 +16,10 @@
 - Clear pathways for future drill-down (filters, export) without overloading initial release.
 
 ## Phase 1 — Discovery & Analytics Inventory *(coding paused until this phase is complete)*
-- [ ] Audit existing Prisma models, repositories, and seed data to confirm which time-series or aggregation capabilities already exist.
+- [x] Audit existing Prisma models, repositories, and seed data to confirm which time-series or aggregation capabilities already exist.
 - [ ] Interview stakeholders (user, kiosk operators) to understand which decisions they make from the dashboard (inventory planning, promotions, staffing).
-- [ ] Identify additional metrics desired: e.g., average order value (AOV), conversion from kiosk views to purchases, revenue by time of day, low-inventory alerts.
-- [ ] Document data gaps and feasibility notes (which require schema changes vs. derived on the fly).
+- [x] Identify additional metrics desired: e.g., average order value (AOV), conversion from kiosk views to purchases, revenue by time of day, low-inventory alerts.
+- [x] Document data gaps and feasibility notes (which require schema changes vs. derived on the fly).
 
 ## Phase 2 — Experience & Information Architecture
 - [ ] Define the collapsed-state summary: primary KPI(s), sparkline or delta text, alert badges.
@@ -28,7 +28,7 @@
 - [ ] Validate design direction with stakeholder, incorporating accessibility considerations (ARIA labels, text equivalents).
 
 ## Phase 3 — Data Modeling & API Updates
-- [ ] Extend backend calculations to provide *(in progress: deltas + alerts implemented; chart aggregations pending)*:
+- [ ] Extend backend calculations to provide *(mostly complete; payment method breakdown still pending)*:
   - [x] Period-over-period deltas (e.g., vs last week/month).
   - [ ] Aggregations needed for new charts (hourly histogram, category mix, payment method breakdown if available).
     - [x] Hourly histogram (current period).
@@ -39,10 +39,10 @@
 - [x] Add tests covering new repository methods and edge cases (no sales, sparse data).
 
 ## Phase 4 — Frontend Implementation
-- [ ] Introduce a dedicated `SalesOverview` component with internal state for chart views and filters, keeping AdminDashboard concise.
-- [ ] Render enhanced KPI tiles with delta indicators, tooltips, and accessible descriptions.
-- [ ] Replace static lists with chart components (consider lightweight charting library or custom SVG) supporting responsive layouts and dark theme.
-- [ ] Surface alerts or recommendations (e.g., "Trail Mix inventory will deplete in ~3 days") with clear actions.
+- [x] Introduce a dedicated `SalesOverview` component with internal state for chart views and filters, keeping AdminDashboard concise.
+- [x] Render enhanced KPI tiles with delta indicators, tooltips, and accessible descriptions.
+- [x] Replace static lists with chart components (consider lightweight charting library or custom SVG) supporting responsive layouts and dark theme.
+- [x] Surface alerts or recommendations (e.g., "Trail Mix inventory will deplete in ~3 days") with clear actions.
 - [ ] Ensure collapsed summary shows headline KPI + trend and exposes keyboard toggle.
 
 ## Phase 5 — Validation & Observability
@@ -60,7 +60,7 @@
 
 ## Next Steps
 1. Schedule/complete stakeholder discovery (Phase 1) to finalize prioritized metrics.
-2. Capture API/data feasibility notes so schema updates can be planned early.
-3. Draft wireframes or low-fidelity mockups for the expanded overview before implementation.
-4. Update admin product management UI to capture/edit `category` so analytics stay accurate.
-5. Plan frontend consumption of new `hourlyTrend`, `categoryMix`, and alert metadata.
+2. Validate collapsed summary experience and design for keyboard users, then implement within AdminDashboard toggle.
+3. Decide on approach for payment method breakdown data (schema change vs. placeholder messaging) and implement if feasible.
+4. Evaluate need for dedicated SalesOverview tests or component-level coverage to satisfy Phase 5 requirements.
+5. Plan frontend treatments for additional visualizations (e.g., drilldowns, tooltips) once remaining metrics are available.

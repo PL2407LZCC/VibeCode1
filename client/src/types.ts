@@ -40,6 +40,7 @@ export type SalesStats = {
   totalTransactions: number;
   totalRevenue: number;
   itemsSold: number;
+  averageOrderValue: number;
   lifetime: {
     revenue: number;
     transactions: number;
@@ -65,6 +66,7 @@ export type SalesStats = {
     quantity: number;
     revenue: number;
   }>;
+  productPerformance: ProductPerformanceEntry[];
   highlights: {
     bestDay: SalesHighlightDay | null;
     slowDay: SalesHighlightDay | null;
@@ -97,4 +99,23 @@ export type SalesHourlyBucket = {
   hour: string;
   total: number;
   transactions: number;
+};
+
+export type ProductPerformanceWindow = {
+  quantity: number;
+  revenue: number;
+};
+
+export type ProductPerformanceEntry = {
+  productId: string;
+  title: string;
+  category: string;
+  isActive: boolean;
+  inventoryCount: number;
+  price: number;
+  sales: {
+    last7Days: ProductPerformanceWindow;
+    last30Days: ProductPerformanceWindow;
+    lifetime: ProductPerformanceWindow;
+  };
 };

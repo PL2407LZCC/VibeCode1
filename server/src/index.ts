@@ -51,6 +51,12 @@ type PurchaseSummaryRecord = {
   totalAmount: unknown;
 };
 
+type ProductSalesRow = {
+  productId: string;
+  quantity: unknown;
+  revenue: unknown;
+};
+
 const normalizeDecimal = (value: unknown) => {
   if (value == null) {
     return 0;
@@ -477,7 +483,15 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
     const lineItemWindowStart = topProductWindowStart.getTime() < historyWindowStart.getTime() ? topProductWindowStart : historyWindowStart;
     const topProductWindowStartMs = topProductWindowStart.getTime();
 
-    const [purchaseAggregate, purchaseItemAggregate, recentPurchases, relatedPurchaseItems] = await Promise.all([
+    const [
+      purchaseAggregate,
+      purchaseItemAggregate,
+      recentPurchases,
+      relatedPurchaseItems,
+      productCatalog,
+      productSalesLast7DaysRows,
+      productSalesLifetimeRows
+    ] = await Promise.all([
       prisma.purchase.aggregate({
         _sum: { totalAmount: true },
         _count: { _all: true }
@@ -517,7 +531,33 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
             }
           }
         }
-      })
+      }),
+      prisma.product.findMany({
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          inventoryCount: true,
+          isActive: true,
+          price: true
+        }
+      }),
+      prisma.$queryRaw<ProductSalesRow[]>`
+        SELECT "purchase_items"."productId" AS "productId",
+               SUM("purchase_items"."quantity") AS "quantity",
+               SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
+        FROM "purchase_items"
+        INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
+        WHERE "purchases"."createdAt" >= ${currentDailyStart}
+        GROUP BY "purchase_items"."productId"
+      `,
+      prisma.$queryRaw<ProductSalesRow[]>`
+        SELECT "purchase_items"."productId" AS "productId",
+               SUM("purchase_items"."quantity") AS "quantity",
+               SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
+        FROM "purchase_items"
+        GROUP BY "purchase_items"."productId"
+      `
     ]);
 
     const currentDailyBuckets = new Map<string, { total: number; transactions: number }>();
@@ -628,23 +668,73 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       }))
       .sort((a, b) => b.revenue - a.revenue);
 
-    let productTitles: Record<string, string> = {};
-    if (sortedTopProducts.length > 0) {
-      const productDetails = await prisma.product.findMany({
-        where: {
-          id: {
-            in: sortedTopProducts.map(([productId]) => productId)
-          }
-        },
-        select: { id: true, title: true }
-      });
+    const productTitles = productCatalog.reduce<Record<string, string>>((acc, product) => {
+      acc[product.id] = product.title;
+      return acc;
+    }, {});
 
-      const titleMap: Record<string, string> = {};
-      for (const product of productDetails) {
-        titleMap[product.id] = product.title;
+    const roundCurrency = (value: number) => (Number.isFinite(value) ? Number(value.toFixed(2)) : 0);
+
+    const createProductSalesMap = (rows: ProductSalesRow[]) => {
+      const map = new Map<string, { quantity: number; revenue: number }>();
+      for (const row of rows) {
+        const quantityValue = normalizeDecimal(row.quantity ?? 0);
+        const revenueValue = normalizeDecimal(row.revenue ?? 0);
+        map.set(row.productId, {
+          quantity: Math.round(quantityValue),
+          revenue: revenueValue
+        });
       }
-      productTitles = titleMap;
-    }
+      return map;
+    };
+
+    const productSalesLast7DaysMap = createProductSalesMap(productSalesLast7DaysRows);
+    const productSalesLifetimeMap = createProductSalesMap(productSalesLifetimeRows);
+
+    const productPerformance = productCatalog
+      .map((product) => {
+        const last7 = productSalesLast7DaysMap.get(product.id);
+        const last30 = productTotals.get(product.id);
+        const lifetime = productSalesLifetimeMap.get(product.id);
+        const priceValue = normalizeDecimal(product.price);
+
+        const last7Quantity = last7?.quantity ?? 0;
+        const last7Revenue = last7?.revenue ?? 0;
+        const last30Quantity = last30?.quantity ?? 0;
+        const last30Revenue = last30?.revenue ?? 0;
+        const lifetimeQuantity = lifetime?.quantity ?? 0;
+        const lifetimeRevenue = lifetime?.revenue ?? 0;
+
+        return {
+          productId: product.id,
+          title: product.title,
+          category: product.category ?? 'Uncategorized',
+          isActive: product.isActive,
+          inventoryCount: product.inventoryCount,
+          price: roundCurrency(priceValue),
+          sales: {
+            last7Days: {
+              quantity: last7Quantity,
+              revenue: roundCurrency(last7Revenue)
+            },
+            last30Days: {
+              quantity: last30Quantity,
+              revenue: roundCurrency(last30Revenue)
+            },
+            lifetime: {
+              quantity: lifetimeQuantity,
+              revenue: roundCurrency(lifetimeRevenue)
+            }
+          }
+        };
+      })
+      .sort((a, b) => {
+        const revenueDiff = b.sales.last7Days.revenue - a.sales.last7Days.revenue;
+        if (revenueDiff !== 0) {
+          return revenueDiff;
+        }
+        return b.sales.last30Days.revenue - a.sales.last30Days.revenue;
+      });
 
     const roundToPrecision = (value: number, precision: number) => {
       if (precision === 0) {
@@ -795,6 +885,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       categoryMix,
       hourlyTrend,
       topProducts,
+      productPerformance,
       highlights: {
         bestDay,
         slowDay

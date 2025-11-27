@@ -1,6 +1,7 @@
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
 import type { AdminProduct } from '../types';
+import { SalesOverview } from './SalesOverview';
 
 type StatusKind = 'success' | 'error';
 
@@ -200,27 +201,6 @@ export function AdminDashboard() {
   const toggleSection = (section: CollapsibleSectionKey) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
-
-  const dailyMax = useMemo(() => {
-    if (!stats || stats.daily.length === 0) {
-      return 1;
-    }
-    return Math.max(...stats.daily.map((bucket) => bucket.total), 1);
-  }, [stats]);
-
-  const weeklyMax = useMemo(() => {
-    if (!stats || stats.weekly.length === 0) {
-      return 1;
-    }
-    return Math.max(...stats.weekly.map((bucket) => bucket.total), 1);
-  }, [stats]);
-
-  const topRevenueMax = useMemo(() => {
-    if (!stats || stats.topProducts.length === 0) {
-      return 1;
-    }
-    return Math.max(...stats.topProducts.map((item) => item.revenue), 1);
-  }, [stats]);
 
   return (
     <div className="admin-dashboard">
@@ -457,7 +437,7 @@ export function AdminDashboard() {
           ) : null}
         </section>
 
-        <section className="admin-card">
+        <section className="admin-card admin-card--wide">
           <button
             type="button"
             className="admin-card__summary"
@@ -477,89 +457,7 @@ export function AdminDashboard() {
 
           {isSalesOpen ? (
             <div id={COLLAPSIBLE_SECTION_IDS.sales} className="admin-card__content">
-              {!stats ? (
-                <p className="admin-empty">{isLoading ? 'Loading analytics…' : 'No sales recorded yet.'}</p>
-              ) : (
-                <div className="admin-stats">
-                  <dl className="admin-metrics">
-                    <div>
-                      <dt>Total revenue</dt>
-                      <dd>€{stats.totalRevenue.toFixed(2)}</dd>
-                    </div>
-                    <div>
-                      <dt>Transactions</dt>
-                      <dd>{stats.totalTransactions}</dd>
-                    </div>
-                    <div>
-                      <dt>Items sold</dt>
-                      <dd>{stats.itemsSold}</dd>
-                    </div>
-                  </dl>
-
-                  <div className="admin-charts">
-                    <div>
-                      <h3>Last 7 days</h3>
-                      <ul className="admin-chart" role="list">
-                        {stats.daily.map((bucket) => {
-                          const percentage = dailyMax === 0 ? 0 : Math.round((bucket.total / dailyMax) * 100);
-                          return (
-                            <li key={bucket.date}>
-                              <span className="admin-chart__label">{bucket.date}</span>
-                              <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}>
-                                <span style={{ width: `${percentage}%` }} />
-                              </div>
-                              <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-
-                    <div>
-                      <h3>Last 4 weeks</h3>
-                      <ul className="admin-chart" role="list">
-                        {stats.weekly.map((bucket) => {
-                          const percentage = weeklyMax === 0 ? 0 : Math.round((bucket.total / weeklyMax) * 100);
-                          return (
-                            <li key={bucket.weekStart}>
-                              <span className="admin-chart__label">Week of {bucket.weekStart}</span>
-                              <div className="admin-chart__bar" aria-label={`${bucket.total.toFixed(2)} revenue`}>
-                                <span style={{ width: `${percentage}%` }} />
-                              </div>
-                              <span className="admin-chart__value">€{bucket.total.toFixed(2)}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="admin-top-products">
-                    <h3>Top products (30 days)</h3>
-                    {stats.topProducts.length === 0 ? (
-                      <p className="admin-top-products__empty">No product sales yet.</p>
-                    ) : (
-                      <ol className="admin-top-products__list">
-                        {stats.topProducts.map((item) => {
-                          const percentage = topRevenueMax === 0 ? 0 : Math.round((item.revenue / topRevenueMax) * 100);
-                          return (
-                            <li key={item.productId} className="admin-top-products__item">
-                              <div>
-                                <span className="admin-top-products__title">{item.title}</span>
-                                <span className="admin-top-products__subtitle">{item.quantity} sold</span>
-                              </div>
-                              <div className="admin-top-products__bar" aria-label={`${item.revenue.toFixed(2)} revenue`}>
-                                <span style={{ width: `${percentage}%` }} />
-                              </div>
-                              <span className="admin-top-products__value">€{item.revenue.toFixed(2)}</span>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    )}
-                  </div>
-                </div>
-              )}
+              <SalesOverview stats={stats} isLoading={isLoading} />
             </div>
           ) : null}
         </section>

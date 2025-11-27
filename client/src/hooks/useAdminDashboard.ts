@@ -102,6 +102,28 @@ const parseSalesStats = (payload: any): SalesStats => {
     revenue: Number(bucket?.revenue ?? 0)
   });
 
+  const toPerformanceWindow = (windowValue: any) => ({
+    quantity: Number(windowValue?.quantity ?? 0),
+    revenue: Number(windowValue?.revenue ?? 0)
+  });
+
+  const productPerformance = Array.isArray(payload?.productPerformance)
+    ? payload.productPerformance.map((entry: any) => ({
+        productId: String(entry?.productId ?? ''),
+        title: String(entry?.title ?? ''),
+        category:
+          typeof entry?.category === 'string' && entry.category.trim().length > 0 ? entry.category : 'Uncategorized',
+        isActive: Boolean(entry?.isActive),
+        inventoryCount: Number(entry?.inventoryCount ?? 0),
+        price: Number(entry?.price ?? 0),
+        sales: {
+          last7Days: toPerformanceWindow(entry?.sales?.last7Days),
+          last30Days: toPerformanceWindow(entry?.sales?.last30Days),
+          lifetime: toPerformanceWindow(entry?.sales?.lifetime)
+        }
+      }))
+    : [];
+
   const daily = Array.isArray(payload?.daily) ? payload.daily.map(toDailyBucket) : [];
   const weekly = Array.isArray(payload?.weekly) ? payload.weekly.map(toWeeklyBucket) : [];
   const topProducts = Array.isArray(payload?.topProducts) ? payload.topProducts.map(toTopProduct) : [];
@@ -133,6 +155,7 @@ const parseSalesStats = (payload: any): SalesStats => {
     totalTransactions: Number(payload?.totalTransactions ?? 0),
     totalRevenue: Number(payload?.totalRevenue ?? 0),
     itemsSold: Number(payload?.itemsSold ?? 0),
+    averageOrderValue: Number(payload?.summary?.averageOrderValue?.current ?? 0),
     lifetime: {
       revenue: Number(payload?.lifetime?.revenue ?? payload?.totalRevenue ?? 0),
       transactions: Number(payload?.lifetime?.transactions ?? payload?.totalTransactions ?? 0),
@@ -159,6 +182,7 @@ const parseSalesStats = (payload: any): SalesStats => {
     hourlyTrend,
     categoryMix,
     topProducts,
+    productPerformance,
     highlights: {
       bestDay: parseHighlightDay(payload?.highlights?.bestDay),
       slowDay: parseHighlightDay(payload?.highlights?.slowDay)
