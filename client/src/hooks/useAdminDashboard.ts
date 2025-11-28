@@ -10,7 +10,7 @@ import type {
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-const TOKEN_MISSING_MESSAGE =
+export const ADMIN_TOKEN_MISSING_MESSAGE =
   'Admin token is not configured. Set VITE_ADMIN_TOKEN in your environment to unlock admin tools.';
 
 type CreateProductInput = {
@@ -197,12 +197,12 @@ export function useAdminDashboard(): AdminDashboardState {
   const [config, setConfig] = useState<KioskConfig | null>(null);
   const [stats, setStats] = useState<SalesStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(adminToken ? null : TOKEN_MISSING_MESSAGE);
+  const [error, setError] = useState<string | null>(adminToken ? null : ADMIN_TOKEN_MISSING_MESSAGE);
 
   const authorizedFetch = useCallback(
     async (path: string, init?: RequestInit) => {
       if (!adminToken) {
-        throw new Error(TOKEN_MISSING_MESSAGE);
+        throw new Error(ADMIN_TOKEN_MISSING_MESSAGE);
       }
 
       const headers = new Headers(init?.headers ?? {});
@@ -238,7 +238,7 @@ export function useAdminDashboard(): AdminDashboardState {
 
   const load = useCallback(async () => {
     if (!adminToken) {
-      setError(TOKEN_MISSING_MESSAGE);
+      setError(ADMIN_TOKEN_MISSING_MESSAGE);
       return;
     }
 

@@ -195,11 +195,11 @@ describe('API routes', () => {
         { productId: 'granola-bar', quantity: 5, revenue: 10 }
       ])
       .mockResolvedValueOnce([
-        { hour: 8, transactions: 40 },
-        { hour: 9, transactions: 5 },
-        { hour: 11, transactions: 20 },
-        { hour: 18, transactions: 30 },
-        { hour: 20, transactions: 25 }
+        { hour: 10, transactions: 40 },
+        { hour: 11, transactions: 5 },
+        { hour: 13, transactions: 20 },
+        { hour: 20, transactions: 30 },
+        { hour: 22, transactions: 25 }
       ]);
     prismaMock.product.findMany.mockResolvedValue([
       {
@@ -391,9 +391,9 @@ describe('API routes', () => {
 
     expect(Array.isArray(body.hourlyTrend)).toBe(true);
     expect(body.hourlyTrend).toHaveLength(24);
-    expect(body.hourlyTrend[8]).toEqual({ hour: '08:00', percentage: 33.3, transactions: 40 });
-    expect(body.hourlyTrend[11]).toEqual({ hour: '11:00', percentage: 16.7, transactions: 20 });
-    expect(body.hourlyTrend[18]).toEqual({ hour: '18:00', percentage: 25, transactions: 30 });
+    expect(body.hourlyTrend[10]).toEqual({ hour: '10:00', percentage: 33.3, transactions: 40 });
+    expect(body.hourlyTrend[13]).toEqual({ hour: '13:00', percentage: 16.7, transactions: 20 });
+    expect(body.hourlyTrend[20]).toEqual({ hour: '20:00', percentage: 25, transactions: 30 });
 
     expect(Array.isArray(body.topProducts)).toBe(true);
     expect(body.topProducts[0]).toEqual({ productId: 'demo-coffee', title: 'Coffee', quantity: 8, revenue: 20 });

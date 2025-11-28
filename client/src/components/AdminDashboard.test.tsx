@@ -56,6 +56,13 @@ describe('AdminDashboard', () => {
       inventoryEnabled: true
     };
 
+    const transactionsPayload = {
+      range: { start: '2025-11-01T00:00:00.000Z', end: '2025-11-07' },
+      categoryFilter: null,
+      categories: ['Beverages'],
+      transactions: []
+    };
+
     const statsPayload = {
       totalTransactions: 3,
       totalRevenue: 42,
@@ -150,6 +157,7 @@ describe('AdminDashboard', () => {
               description: body.description ?? '',
               price: body.price,
               imageUrl: body.imageUrl ?? null,
+
               inventoryCount: body.inventoryCount,
               isActive: body.isActive ?? true,
               createdAt: '2025-11-07T12:00:00.000Z',
@@ -175,6 +183,10 @@ describe('AdminDashboard', () => {
 
       if (url.endsWith('/admin/stats/sales')) {
         return createJsonResponse(statsPayload);
+      }
+
+      if (url.includes('/admin/transactions')) {
+        return createJsonResponse(transactionsPayload);
       }
 
       throw new Error(`Unexpected fetch call to ${url}`);
@@ -301,6 +313,13 @@ describe('AdminDashboard', () => {
       alerts: []
     };
 
+    const transactionsPayload = {
+      range: { start: '2025-11-01T00:00:00.000Z', end: '2025-11-07' },
+      categoryFilter: null,
+      categories: ['Beverages'],
+      transactions: []
+    };
+
     const configPayload = {
       currency: 'EUR',
       paymentProvider: 'mobilepay',
@@ -334,6 +353,10 @@ describe('AdminDashboard', () => {
 
       if (url.endsWith('/admin/stats/sales')) {
         return createJsonResponse(statsPayload);
+      }
+
+      if (url.includes('/admin/transactions')) {
+        return createJsonResponse(transactionsPayload);
       }
 
       throw new Error(`Unexpected fetch call to ${url}`);
@@ -441,6 +464,10 @@ describe('AdminDashboard', () => {
         return createJsonResponse(statsPayload);
       }
 
+      if (url.includes('/admin/transactions')) {
+        return createJsonResponse(transactionsPayload);
+      }
+
       if (url.endsWith('/admin/uploads') && method === 'POST') {
         const body = init?.body;
         if (!(body instanceof FormData)) {
@@ -481,5 +508,133 @@ describe('AdminDashboard', () => {
     });
 
     expect(screen.getByText(/image uploaded successfully/i)).toBeTruthy();
+  });
+
+  it('loads transactions when the panel is expanded and supports filtering', async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('VITE_ADMIN_TOKEN', 'test-secret');
+
+    const productsPayload = { items: [] };
+    const configPayload = { currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: true };
+    const statsPayload = {
+      totalTransactions: 0,
+      totalRevenue: 0,
+      itemsSold: 0,
+      daily: [],
+      weekly: [],
+      topProducts: [],
+      productPerformance: [],
+      hourlyTrend: [],
+      categoryMix: [],
+      lifetime: { revenue: 0, transactions: 0, itemsSold: 0 },
+      period: {
+        current: { start: '2025-11-01', end: '2025-11-07' },
+        previous: { start: '2025-10-25', end: '2025-10-31' }
+      },
+      summary: {
+        revenue: { current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 },
+        transactions: { current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 },
+        itemsSold: { current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 },
+        averageOrderValue: { current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 }
+      },
+      highlights: { bestDay: null, slowDay: null },
+      alerts: []
+    };
+
+    const transactionsPayload = {
+      range: { start: '2025-11-01T00:00:00.000Z', end: '2025-11-07' },
+      categoryFilter: null,
+      categories: ['Beverages', 'Snacks'],
+      transactions: [
+        {
+          id: 'tx-1',
+          reference: 'ORDER-123',
+          status: 'PAID',
+          notes: 'Deliver to desk',
+          totalAmount: 12.5,
+          createdAt: '2025-11-07T09:30:00.000Z',
+          lineItems: [
+            {
+              productId: 'coffee',
+              title: 'Filter Coffee',
+              category: 'Beverages',
+              quantity: 2,
+              unitPrice: 3.5,
+              subtotal: 7
+            },
+            {
+              productId: 'bar',
+              title: 'Energy Bar',
+              category: 'Snacks',
+              quantity: 2,
+              unitPrice: 2.75,
+              subtotal: 5.5
+            }
+          ],
+          categoryBreakdown: [
+            { category: 'Beverages', quantity: 2, revenue: 7 },
+            { category: 'Snacks', quantity: 2, revenue: 5.5 }
+          ]
+        }
+      ]
+    };
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/admin/products') && method === 'GET') {
+        return createJsonResponse(productsPayload);
+      }
+
+      if (url.endsWith('/config')) {
+        return createJsonResponse(configPayload);
+      }
+
+      if (url.endsWith('/admin/stats/sales')) {
+        return createJsonResponse(statsPayload);
+      }
+
+      if (url.includes('/admin/transactions')) {
+        return createJsonResponse(transactionsPayload);
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    render(<AdminDashboard />);
+
+    await expandSection(/Transactions/i);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/admin/transactions'),
+        expect.objectContaining({ headers: expect.anything() })
+      );
+    });
+
+    expect(await screen.findByText(/Reference ORDER-123/)).toBeTruthy();
+    expect(screen.getByText(/Deliver to desk/)).toBeTruthy();
+    expect(screen.getByText(/Energy Bar/)).toBeTruthy();
+    expect(screen.getByText(/Revenue by category/)).toBeTruthy();
+    expect(screen.getAllByText(/All categories/)).not.toHaveLength(0);
+
+    const initialCalls = fetchMock.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/admin/transactions')
+    ).length;
+
+    await userEvent.click(screen.getByRole('button', { name: /Last 30 days/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Apply filters/i }));
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.filter(([url]) => typeof url === 'string' && url.includes('/admin/transactions'))
+        .length;
+      expect(calls).toBeGreaterThan(initialCalls);
+    });
   });
 });
