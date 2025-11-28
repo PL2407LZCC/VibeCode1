@@ -85,6 +85,47 @@ function createInitialState(): AdminState {
         { productId: 'demo-coffee', title: 'House Blend Coffee', quantity: 46, revenue: 115.0 },
         { productId: 'demo-energy', title: 'Lightning Energy Shot', quantity: 32, revenue: 96.0 },
         { productId: 'demo-trailmix', title: 'Trail Mix Snack Pack', quantity: 20, revenue: 40.0 }
+      ],
+      productPerformance: [
+        {
+          productId: 'demo-coffee',
+          title: 'House Blend Coffee',
+          category: 'Beverages',
+          isActive: true,
+          inventoryCount: 28,
+          price: 2.5,
+          sales: {
+            last7Days: { quantity: 18, revenue: 45 },
+            last30Days: { quantity: 46, revenue: 115 },
+            lifetime: { quantity: 190, revenue: 460 }
+          }
+        },
+        {
+          productId: 'demo-energy',
+          title: 'Lightning Energy Shot',
+          category: 'Beverages',
+          isActive: true,
+          inventoryCount: 40,
+          price: 3,
+          sales: {
+            last7Days: { quantity: 12, revenue: 36 },
+            last30Days: { quantity: 32, revenue: 96 },
+            lifetime: { quantity: 120, revenue: 360 }
+          }
+        },
+        {
+          productId: 'demo-trailmix',
+          title: 'Trail Mix Snack Pack',
+          category: 'Snacks',
+          isActive: true,
+          inventoryCount: 64,
+          price: 2,
+          sales: {
+            last7Days: { quantity: 9, revenue: 18 },
+            last30Days: { quantity: 20, revenue: 40 },
+            lifetime: { quantity: 88, revenue: 176 }
+          }
+        }
       ]
     }
   };

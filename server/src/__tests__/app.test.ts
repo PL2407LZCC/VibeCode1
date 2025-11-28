@@ -29,7 +29,8 @@ const {
     },
     product: {
       findMany: vi.fn()
-    }
+    },
+    $queryRaw: vi.fn()
   };
 
   return {
@@ -67,6 +68,8 @@ vi.mock('../lib/prisma', () => ({
 
 type ServerModule = typeof import('../index');
 
+const FIXED_NOW = new Date('2025-11-25T12:00:00Z');
+
 let app!: ServerModule['app'];
 let resetState!: ServerModule['resetState'];
 let uploadsDirAbsolute!: string;
@@ -86,6 +89,9 @@ describe('API routes', () => {
     process.env.UPLOADS_DIR = uploadsDirAbsolute;
     process.env.UPLOAD_MAX_SIZE_MB = '1';
 
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_NOW);
+
     const serverModule: ServerModule = await import('../index');
     app = serverModule.app;
     resetState = serverModule.resetState;
@@ -93,6 +99,7 @@ describe('API routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.setSystemTime(FIXED_NOW);
 
     if (uploadsDirAbsolute) {
       rmSync(uploadsDirAbsolute, { recursive: true, force: true });
@@ -100,36 +107,125 @@ describe('API routes', () => {
     }
 
     listActiveProductsMock.mockResolvedValue([
-      { id: 'demo-coffee', title: 'Coffee', price: '2.50', imageUrl: null, inventoryCount: 5, isActive: true }
+      {
+        id: 'demo-coffee',
+        title: 'Coffee',
+        price: '2.50',
+        imageUrl: null,
+        inventoryCount: 5,
+        isActive: true,
+        category: 'Beverages'
+      }
     ]);
 
     createPurchaseMock.mockResolvedValue({ reference: 'purchase-123' });
     listAllProductsMock.mockResolvedValue([
-      { id: 'demo-coffee', title: 'Coffee', description: '', price: 2.5, imageUrl: null, inventoryCount: 5, isActive: true, createdAt: new Date(), updatedAt: new Date() }
+      {
+        id: 'demo-coffee',
+        title: 'Coffee',
+        description: '',
+        price: 2.5,
+        imageUrl: null,
+        inventoryCount: 5,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        category: 'Beverages'
+      }
     ]);
-    createProductMock.mockResolvedValue({ id: 'new-product' });
-    updateProductMock.mockResolvedValue({ id: 'demo-coffee' });
+    createProductMock.mockResolvedValue({ id: 'new-product', category: 'Beverages' });
+    updateProductMock.mockResolvedValue({ id: 'demo-coffee', category: 'Beverages' });
     updateProductInventoryMock.mockResolvedValue({ id: 'demo-coffee', inventoryCount: 7 });
-    archiveProductMock.mockResolvedValue({ id: 'demo-coffee', isActive: false });
+    archiveProductMock.mockResolvedValue({ id: 'demo-coffee', isActive: false, category: 'Beverages' });
 
     getKioskConfigMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: true });
     setInventoryEnabledMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: false });
 
-    prismaMock.purchase.aggregate.mockResolvedValue({ _sum: { totalAmount: 42 }, _count: { _all: 3 } });
+    prismaMock.purchase.aggregate.mockResolvedValue({ _sum: { totalAmount: 1000 }, _count: { _all: 120 } });
     prismaMock.purchase.findMany.mockResolvedValue([
-      { createdAt: new Date('2025-11-05T00:00:00Z'), totalAmount: 12 },
-      { createdAt: new Date('2025-11-07T00:00:00Z'), totalAmount: 30 }
+      { createdAt: new Date('2025-10-10T13:00:00Z'), totalAmount: 100 },
+      { createdAt: new Date('2025-11-13T09:00:00Z'), totalAmount: 40 },
+      { createdAt: new Date('2025-11-17T20:30:00Z'), totalAmount: 10 },
+      { createdAt: new Date('2025-11-19T08:15:00Z'), totalAmount: 50 },
+      { createdAt: new Date('2025-11-22T18:25:00Z'), totalAmount: 30 },
+      { createdAt: new Date('2025-11-25T11:05:00Z'), totalAmount: 20 }
     ]);
     prismaMock.purchase.deleteMany.mockResolvedValue({ count: 0 });
-    prismaMock.purchaseItem.aggregate.mockResolvedValue({ _sum: { quantity: 9 } });
+    prismaMock.purchaseItem.aggregate.mockResolvedValue({ _sum: { quantity: 320 } });
     prismaMock.purchaseItem.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.purchaseItem.findMany.mockResolvedValue([
-      { productId: 'demo-coffee', quantity: 5, unitPrice: 2.5 },
-      { productId: 'sparkling-water', quantity: 3, unitPrice: 3 }
+      {
+        productId: 'demo-coffee',
+        quantity: 6,
+        unitPrice: 2.5,
+        purchase: { createdAt: new Date('2025-11-22T18:25:00Z') },
+        product: { category: 'Beverages' }
+      },
+      {
+        productId: 'sparkling-water',
+        quantity: 4,
+        unitPrice: 3,
+        purchase: { createdAt: new Date('2025-11-25T11:05:00Z') },
+        product: { category: 'Beverages' }
+      },
+      {
+        productId: 'granola-bar',
+        quantity: 5,
+        unitPrice: 2,
+        purchase: { createdAt: new Date('2025-11-22T08:15:00Z') },
+        product: { category: 'Snacks' }
+      },
+      {
+        productId: 'demo-coffee',
+        quantity: 2,
+        unitPrice: 2.5,
+        purchase: { createdAt: new Date('2025-11-17T20:30:00Z') },
+        product: { category: 'Beverages' }
+      }
     ]);
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([
+        { productId: 'demo-coffee', quantity: 6, revenue: 15 },
+        { productId: 'sparkling-water', quantity: 4, revenue: 12 },
+        { productId: 'granola-bar', quantity: 5, revenue: 10 }
+      ])
+      .mockResolvedValueOnce([
+        { productId: 'demo-coffee', quantity: 8, revenue: 20 },
+        { productId: 'sparkling-water', quantity: 4, revenue: 12 },
+        { productId: 'granola-bar', quantity: 5, revenue: 10 }
+      ])
+      .mockResolvedValueOnce([
+        { hour: 8, transactions: 40 },
+        { hour: 9, transactions: 5 },
+        { hour: 11, transactions: 20 },
+        { hour: 18, transactions: 30 },
+        { hour: 20, transactions: 25 }
+      ]);
     prismaMock.product.findMany.mockResolvedValue([
-      { id: 'demo-coffee', title: 'Coffee' },
-      { id: 'sparkling-water', title: 'Sparkling Water' }
+      {
+        id: 'demo-coffee',
+        title: 'Coffee',
+        category: 'Beverages',
+        inventoryCount: 18,
+        isActive: true,
+        price: 2.5
+      },
+      {
+        id: 'sparkling-water',
+        title: 'Sparkling Water',
+        category: 'Beverages',
+        inventoryCount: 30,
+        isActive: true,
+        price: 3
+      },
+      {
+        id: 'granola-bar',
+        title: 'Granola Bar',
+        category: 'Snacks',
+        inventoryCount: 45,
+        isActive: true,
+        price: 2
+      }
     ]);
 
     process.env.ADMIN_API_KEY = 'test-secret';
@@ -141,6 +237,8 @@ describe('API routes', () => {
     if (uploadsDirAbsolute) {
       rmSync(uploadsDirAbsolute, { recursive: true, force: true });
     }
+
+    vi.useRealTimers();
   });
 
   it('responds with ok status on /health', async () => {
@@ -265,18 +363,143 @@ describe('API routes', () => {
       .set('x-admin-token', 'test-secret');
 
     expect(response.status).toBe(200);
-    expect(response.body.totalTransactions).toBe(3);
-    expect(response.body.totalRevenue).toBe(42);
-    expect(response.body.itemsSold).toBe(9);
-    expect(Array.isArray(response.body.daily)).toBe(true);
-    expect(Array.isArray(response.body.weekly)).toBe(true);
-    expect(Array.isArray(response.body.topProducts)).toBe(true);
-    expect(response.body.topProducts[0]).toMatchObject({ productId: 'demo-coffee', title: 'Coffee' });
-    expect(response.body.daily).toHaveLength(7);
-    expect(response.body.weekly).toHaveLength(4);
+    const { body } = response;
+
+    expect(body.totalTransactions).toBe(120);
+    expect(body.totalRevenue).toBe(1000);
+    expect(body.itemsSold).toBe(320);
+    expect(body.lifetime).toEqual({ revenue: 1000, transactions: 120, itemsSold: 320 });
+    expect(body.period).toEqual({
+      current: { start: '2025-11-19', end: '2025-11-25' },
+      previous: { start: '2025-11-12', end: '2025-11-18' }
+    });
+
+    expect(body.summary.revenue).toEqual({ current: 100, previous: 50, deltaAbsolute: 50, deltaPercent: 100 });
+    expect(body.summary.transactions).toEqual({ current: 3, previous: 2, deltaAbsolute: 1, deltaPercent: 50 });
+    expect(body.summary.itemsSold).toEqual({ current: 15, previous: 2, deltaAbsolute: 13, deltaPercent: 650 });
+    expect(body.summary.averageOrderValue).toEqual({ current: 33.33, previous: 25, deltaAbsolute: 8.33, deltaPercent: 33.3 });
+
+    expect(Array.isArray(body.daily)).toBe(true);
+    expect(body.daily).toHaveLength(7);
+    expect(body.daily[0]).toEqual({ date: '2025-11-19', total: 50, transactions: 1 });
+    expect(body.daily[body.daily.length - 1]).toEqual({ date: '2025-11-25', total: 20, transactions: 1 });
+
+    expect(Array.isArray(body.weekly)).toBe(true);
+    expect(body.weekly).toHaveLength(4);
+    expect(body.weekly[0]).toEqual({ weekStart: '2025-11-03', total: 0, transactions: 0 });
+    expect(body.weekly[2]).toEqual({ weekStart: '2025-11-17', total: 90, transactions: 3 });
+
+    expect(Array.isArray(body.hourlyTrend)).toBe(true);
+    expect(body.hourlyTrend).toHaveLength(24);
+    expect(body.hourlyTrend[8]).toEqual({ hour: '08:00', percentage: 33.3, transactions: 40 });
+    expect(body.hourlyTrend[11]).toEqual({ hour: '11:00', percentage: 16.7, transactions: 20 });
+    expect(body.hourlyTrend[18]).toEqual({ hour: '18:00', percentage: 25, transactions: 30 });
+
+    expect(Array.isArray(body.topProducts)).toBe(true);
+    expect(body.topProducts[0]).toEqual({ productId: 'demo-coffee', title: 'Coffee', quantity: 8, revenue: 20 });
+    expect(body.topProducts[1]).toEqual({ productId: 'sparkling-water', title: 'Sparkling Water', quantity: 4, revenue: 12 });
+    expect(body.topProducts[2]).toEqual({ productId: 'granola-bar', title: 'Granola Bar', quantity: 5, revenue: 10 });
+
+    expect(body.highlights).toEqual({
+      bestDay: { date: '2025-11-19', total: 50, transactions: 1 },
+      slowDay: { date: '2025-11-25', total: 20, transactions: 1 }
+    });
+
+    expect(body.alerts).toContain('Average order value increased 33.3% week-over-week.');
+
+    expect(body.categoryMix).toEqual([
+      {
+        category: 'Beverages',
+        quantity: 10,
+        revenue: 27,
+        revenueShare: 27,
+        quantityShare: 66.7
+      },
+      {
+        category: 'Snacks',
+        quantity: 5,
+        revenue: 10,
+        revenueShare: 10,
+        quantityShare: 33.3
+      }
+    ]);
+
+    expect(body.productPerformance).toEqual([
+      {
+        productId: 'demo-coffee',
+        title: 'Coffee',
+        category: 'Beverages',
+        isActive: true,
+        inventoryCount: 18,
+        price: 2.5,
+        sales: {
+          last7Days: { quantity: 6, revenue: 15 },
+          last30Days: { quantity: 8, revenue: 20 },
+          lifetime: { quantity: 8, revenue: 20 }
+        }
+      },
+      {
+        productId: 'sparkling-water',
+        title: 'Sparkling Water',
+        category: 'Beverages',
+        isActive: true,
+        inventoryCount: 30,
+        price: 3,
+        sales: {
+          last7Days: { quantity: 4, revenue: 12 },
+          last30Days: { quantity: 4, revenue: 12 },
+          lifetime: { quantity: 4, revenue: 12 }
+        }
+      },
+      {
+        productId: 'granola-bar',
+        title: 'Granola Bar',
+        category: 'Snacks',
+        isActive: true,
+        inventoryCount: 45,
+        price: 2,
+        sales: {
+          last7Days: { quantity: 5, revenue: 10 },
+          last30Days: { quantity: 5, revenue: 10 },
+          lifetime: { quantity: 5, revenue: 10 }
+        }
+      }
+    ]);
+
     expect(prismaMock.purchase.aggregate).toHaveBeenCalled();
     expect(prismaMock.purchase.findMany).toHaveBeenCalled();
     expect(prismaMock.purchaseItem.findMany).toHaveBeenCalled();
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns zeroed stats and alert when no transactions exist', async () => {
+    prismaMock.purchase.aggregate.mockResolvedValueOnce({ _sum: { totalAmount: null }, _count: { _all: 0 } });
+    prismaMock.purchaseItem.aggregate.mockResolvedValueOnce({ _sum: { quantity: null } });
+    prismaMock.purchase.findMany.mockResolvedValueOnce([]);
+    prismaMock.purchaseItem.findMany.mockResolvedValueOnce([]);
+    prismaMock.product.findMany.mockResolvedValueOnce([]);
+    prismaMock.$queryRaw.mockReset();
+    prismaMock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const response = await request(app)
+      .get('/admin/stats/sales')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    const { body } = response;
+
+    expect(body.summary.revenue).toEqual({ current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 });
+    expect(body.summary.transactions).toEqual({ current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 });
+    expect(body.summary.itemsSold).toEqual({ current: 0, previous: 0, deltaAbsolute: 0, deltaPercent: 0 });
+    expect(body.highlights).toEqual({ bestDay: null, slowDay: null });
+    expect(body.topProducts).toEqual([]);
+    expect(body.alerts).toContain('No transactions recorded in the last 7 days.');
+    expect(body.daily).toHaveLength(7);
+    expect(body.daily.every((entry: { total: number; transactions: number }) => entry.total === 0 && entry.transactions === 0)).toBe(true);
+    expect(body.hourlyTrend).toHaveLength(24);
+    expect(body.hourlyTrend.every((entry: { percentage: number; transactions: number }) => entry.percentage === 0 && entry.transactions === 0)).toBe(true);
+    expect(body.categoryMix).toEqual([]);
+    expect(body.productPerformance).toEqual([]);
   });
 
   it('allows admins to upload images and returns file metadata', async () => {

@@ -43,11 +43,23 @@ type CreateProductPayload = {
   imageUrl?: unknown;
   inventoryCount?: unknown;
   isActive?: unknown;
+  category?: unknown;
 };
 
 type PurchaseSummaryRecord = {
   createdAt: Date;
   totalAmount: unknown;
+};
+
+type ProductSalesRow = {
+  productId: string;
+  quantity: unknown;
+  revenue: unknown;
+};
+
+type HourlyTransactionsRow = {
+  hour: unknown;
+  transactions: unknown;
 };
 
 const normalizeDecimal = (value: unknown) => {
@@ -74,6 +86,18 @@ const toIsoDate = (date: Date) => {
   const copy = new Date(date);
   copy.setUTCHours(0, 0, 0, 0);
   return copy.toISOString().slice(0, 10);
+};
+
+const startOfDayUtc = (date: Date) => {
+  const copy = new Date(date);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy;
+};
+
+const addDaysUtc = (date: Date, amount: number) => {
+  const copy = new Date(date);
+  copy.setUTCDate(copy.getUTCDate() + amount);
+  return copy;
 };
 
 const startOfIsoWeek = (date: Date) => {
@@ -253,6 +277,21 @@ adminRouter.get('/products', async (_req: Request, res: Response) => {
   }
 });
 
+const MAX_CATEGORY_LENGTH = 64;
+
+const normalizeCategory = (rawCategory: unknown) => {
+  if (typeof rawCategory !== 'string') {
+    return 'Uncategorized';
+  }
+
+  const trimmed = rawCategory.trim();
+  if (trimmed.length === 0) {
+    return 'Uncategorized';
+  }
+
+  return trimmed.length > MAX_CATEGORY_LENGTH ? trimmed.slice(0, MAX_CATEGORY_LENGTH) : trimmed;
+};
+
 const parseCreateProductPayload = (body: CreateProductPayload) => {
   if (typeof body.title !== 'string' || body.title.trim().length === 0) {
     return { error: 'Product title is required.' } as const;
@@ -274,7 +313,8 @@ const parseCreateProductPayload = (body: CreateProductPayload) => {
     price,
     imageUrl: typeof body.imageUrl === 'string' ? body.imageUrl : undefined,
     inventoryCount: inventory,
-    isActive: typeof body.isActive === 'boolean' ? body.isActive : true
+    isActive: typeof body.isActive === 'boolean' ? body.isActive : true,
+    category: normalizeCategory(body.category)
   };
 
   return { data: result } as const;
@@ -346,6 +386,14 @@ adminRouter.patch('/products/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'isActive must be a boolean value.' });
     }
     data.isActive = payload.isActive;
+  }
+
+  if (payload.category !== undefined) {
+    const normalizedCategory = normalizeCategory(payload.category);
+    if (normalizedCategory.length === 0) {
+      return res.status(400).json({ message: 'Category must be a valid string.' });
+    }
+    data.category = normalizedCategory;
   }
 
   if (Object.keys(data).length === 0) {
@@ -423,17 +471,33 @@ adminRouter.patch('/kiosk-mode', async (req: Request, res: Response) => {
 adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
   try {
     const now = new Date();
-    const dailyWindowStart = new Date(now);
-    dailyWindowStart.setUTCDate(dailyWindowStart.getUTCDate() - 6);
-    dailyWindowStart.setUTCHours(0, 0, 0, 0);
+    const dailyWindowDays = 7;
+    const weeklyWindowWeeks = 4;
 
-    const weeklyWindowStart = startOfIsoWeek(new Date(now));
-    weeklyWindowStart.setUTCDate(weeklyWindowStart.getUTCDate() - 21);
+    const todayStart = startOfDayUtc(now);
+    const currentDailyStart = addDaysUtc(todayStart, -(dailyWindowDays - 1));
+    const previousDailyStart = addDaysUtc(currentDailyStart, -dailyWindowDays);
+    const previousDailyEnd = addDaysUtc(currentDailyStart, -1);
 
-    const topProductWindowStart = new Date(now);
-    topProductWindowStart.setUTCDate(topProductWindowStart.getUTCDate() - 30);
+    const isoWeekAnchor = startOfIsoWeek(new Date(now));
+    const currentWeeklyStart = addDaysUtc(isoWeekAnchor, -(weeklyWindowWeeks - 1) * 7);
+    const previousWeeklyStart = addDaysUtc(currentWeeklyStart, -weeklyWindowWeeks * 7);
 
-    const [purchaseAggregate, purchaseItemAggregate, recentPurchases, recentLineItems] = await Promise.all([
+    const historyWindowStart = previousWeeklyStart;
+    const topProductWindowStart = addDaysUtc(todayStart, -29);
+    const lineItemWindowStart = topProductWindowStart.getTime() < historyWindowStart.getTime() ? topProductWindowStart : historyWindowStart;
+    const topProductWindowStartMs = topProductWindowStart.getTime();
+
+    const [
+      purchaseAggregate,
+      purchaseItemAggregate,
+      recentPurchases,
+      relatedPurchaseItems,
+      productCatalog,
+      productSalesLast7DaysRows,
+      productSalesLifetimeRows,
+      hourlyTransactionsRows
+    ] = await Promise.all([
       prisma.purchase.aggregate({
         _sum: { totalAmount: true },
         _count: { _all: true }
@@ -444,7 +508,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       prisma.purchase.findMany({
         where: {
           createdAt: {
-            gte: weeklyWindowStart
+            gte: historyWindowStart
           }
         },
         orderBy: { createdAt: 'asc' },
@@ -454,98 +518,406 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         where: {
           purchase: {
             createdAt: {
-              gte: topProductWindowStart
+              gte: lineItemWindowStart
             }
           }
         },
         select: {
           productId: true,
           quantity: true,
-          unitPrice: true
+          unitPrice: true,
+          purchase: {
+            select: {
+              createdAt: true
+            }
+          },
+          product: {
+            select: {
+              category: true
+            }
+          }
         }
-      })
+      }),
+      prisma.product.findMany({
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          inventoryCount: true,
+          isActive: true,
+          price: true
+        }
+      }),
+      prisma.$queryRaw<ProductSalesRow[]>`
+        SELECT "purchase_items"."productId" AS "productId",
+               SUM("purchase_items"."quantity") AS "quantity",
+               SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
+        FROM "purchase_items"
+        INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
+        WHERE "purchases"."createdAt" >= ${currentDailyStart}
+        GROUP BY "purchase_items"."productId"
+      `,
+      prisma.$queryRaw<ProductSalesRow[]>`
+        SELECT "purchase_items"."productId" AS "productId",
+               SUM("purchase_items"."quantity") AS "quantity",
+               SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
+        FROM "purchase_items"
+        GROUP BY "purchase_items"."productId"
+      `,
+      prisma.$queryRaw<HourlyTransactionsRow[]>`
+        SELECT EXTRACT(HOUR FROM "purchases"."createdAt")::int AS "hour",
+               COUNT(*)::bigint AS "transactions"
+        FROM "purchases"
+        GROUP BY 1
+        ORDER BY 1
+      `
     ]);
 
-    const dailyBucket: Record<string, { total: number; transactions: number }> = {};
-    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-      const day = new Date(dailyWindowStart);
-      day.setUTCDate(dailyWindowStart.getUTCDate() + dayOffset);
-      dailyBucket[toIsoDate(day)] = { total: 0, transactions: 0 };
+    const lifetimeTransactions = purchaseAggregate._count._all ?? 0;
+
+    const currentDailyBuckets = new Map<string, { total: number; transactions: number }>();
+    const currentDailyKeys: string[] = [];
+
+    for (let dayOffset = 0; dayOffset < dailyWindowDays; dayOffset += 1) {
+      const currentDay = addDaysUtc(currentDailyStart, dayOffset);
+      const currentKey = toIsoDate(currentDay);
+      currentDailyBuckets.set(currentKey, { total: 0, transactions: 0 });
+      currentDailyKeys.push(currentKey);
     }
 
-    const weeklyBucket: Record<string, { total: number; transactions: number }> = {};
-    for (let weekOffset = 0; weekOffset < 4; weekOffset += 1) {
-      const weekStart = new Date(weeklyWindowStart);
-      weekStart.setUTCDate(weeklyWindowStart.getUTCDate() + weekOffset * 7);
-      weeklyBucket[toIsoDate(weekStart)] = { total: 0, transactions: 0 };
+    const currentWeeklyBuckets = new Map<string, { total: number; transactions: number }>();
+    const currentWeeklyKeys: string[] = [];
+
+    for (let weekOffset = 0; weekOffset < weeklyWindowWeeks; weekOffset += 1) {
+      const weekStart = addDaysUtc(currentWeeklyStart, weekOffset * 7);
+      const key = toIsoDate(weekStart);
+      currentWeeklyBuckets.set(key, { total: 0, transactions: 0 });
+      currentWeeklyKeys.push(key);
     }
 
-  (recentPurchases as PurchaseSummaryRecord[]).forEach((purchase) => {
-      const purchaseDate = toIsoDate(purchase.createdAt);
-      if (purchaseDate in dailyBucket) {
-        dailyBucket[purchaseDate].total += normalizeDecimal(purchase.totalAmount);
-        dailyBucket[purchaseDate].transactions += 1;
+    const currentDailyStartMs = currentDailyStart.getTime();
+    const previousDailyStartMs = previousDailyStart.getTime();
+    const currentWeeklyStartMs = currentWeeklyStart.getTime();
+    const previousWeeklyStartMs = previousWeeklyStart.getTime();
+
+    let currentRevenue = 0;
+    let previousRevenue = 0;
+    let currentTransactions = 0;
+    let previousTransactions = 0;
+
+    (recentPurchases as PurchaseSummaryRecord[]).forEach((purchase) => {
+      const amount = normalizeDecimal(purchase.totalAmount);
+      const purchaseTime = purchase.createdAt.getTime();
+      const purchaseDateKey = toIsoDate(purchase.createdAt);
+      const purchaseWeekKey = toIsoDate(startOfIsoWeek(purchase.createdAt));
+
+      if (purchaseTime >= currentDailyStartMs) {
+        currentRevenue += amount;
+        currentTransactions += 1;
+        const bucket = currentDailyBuckets.get(purchaseDateKey);
+        if (bucket) {
+          bucket.total += amount;
+          bucket.transactions += 1;
+        }
+
+      } else if (purchaseTime >= previousDailyStartMs && purchaseTime < currentDailyStartMs) {
+        previousRevenue += amount;
+        previousTransactions += 1;
       }
 
-      const weekStart = toIsoDate(startOfIsoWeek(purchase.createdAt));
-      if (weekStart in weeklyBucket) {
-        weeklyBucket[weekStart].total += normalizeDecimal(purchase.totalAmount);
-        weeklyBucket[weekStart].transactions += 1;
+      if (purchaseTime >= currentWeeklyStartMs) {
+        const weekBucket = currentWeeklyBuckets.get(purchaseWeekKey);
+        if (weekBucket) {
+          weekBucket.total += amount;
+          weekBucket.transactions += 1;
+        }
       }
     });
 
+    let currentItemsSold = 0;
+    let previousItemsSold = 0;
+
     const productTotals = new Map<string, { quantity: number; revenue: number }>();
-    for (const lineItem of recentLineItems) {
-      const current = productTotals.get(lineItem.productId) ?? { quantity: 0, revenue: 0 };
-      current.quantity += lineItem.quantity;
-      current.revenue += normalizeDecimal(lineItem.unitPrice) * lineItem.quantity;
-      productTotals.set(lineItem.productId, current);
+    const categoryTotals = new Map<string, { quantity: number; revenue: number }>();
+    let totalCategoryQuantityCurrent = 0;
+
+    for (const item of relatedPurchaseItems) {
+      const purchaseDate = item.purchase.createdAt;
+      const purchaseTime = purchaseDate.getTime();
+
+      if (purchaseTime >= currentDailyStartMs) {
+        currentItemsSold += item.quantity;
+        const categoryKey = item.product?.category ?? 'Uncategorized';
+        const categoryData = categoryTotals.get(categoryKey) ?? { quantity: 0, revenue: 0 };
+        categoryData.quantity += item.quantity;
+        categoryData.revenue += normalizeDecimal(item.unitPrice) * item.quantity;
+        categoryTotals.set(categoryKey, categoryData);
+        totalCategoryQuantityCurrent += item.quantity;
+      } else if (purchaseTime >= previousDailyStartMs && purchaseTime < currentDailyStartMs) {
+        previousItemsSold += item.quantity;
+      }
+
+      if (purchaseTime >= topProductWindowStartMs) {
+        const current = productTotals.get(item.productId) ?? { quantity: 0, revenue: 0 };
+        current.quantity += item.quantity;
+        current.revenue += normalizeDecimal(item.unitPrice) * item.quantity;
+        productTotals.set(item.productId, current);
+      }
     }
 
     const sortedTopProducts = Array.from(productTotals.entries())
       .sort(([, a], [, b]) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    let productTitles: Record<string, string> = {};
-    if (sortedTopProducts.length > 0) {
-      const productDetails = await prisma.product.findMany({
-        where: {
-          id: {
-            in: sortedTopProducts.map(([productId]) => productId)
+    const categoryMix = Array.from(categoryTotals.entries())
+      .map(([category, totals]) => ({
+        category,
+        quantity: totals.quantity,
+        revenue: Number(totals.revenue.toFixed(2)),
+        revenueShare: currentRevenue === 0 ? 0 : Number(((totals.revenue / currentRevenue) * 100).toFixed(1)),
+        quantityShare: totalCategoryQuantityCurrent === 0 ? 0 : Number(((totals.quantity / totalCategoryQuantityCurrent) * 100).toFixed(1))
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const productTitles = productCatalog.reduce<Record<string, string>>((acc, product) => {
+      acc[product.id] = product.title;
+      return acc;
+    }, {});
+
+    const roundCurrency = (value: number) => (Number.isFinite(value) ? Number(value.toFixed(2)) : 0);
+
+    const createProductSalesMap = (rows: ProductSalesRow[]) => {
+      const map = new Map<string, { quantity: number; revenue: number }>();
+      for (const row of rows) {
+        const quantityValue = normalizeDecimal(row.quantity ?? 0);
+        const revenueValue = normalizeDecimal(row.revenue ?? 0);
+        map.set(row.productId, {
+          quantity: Math.round(quantityValue),
+          revenue: revenueValue
+        });
+      }
+      return map;
+    };
+
+    const productSalesLast7DaysMap = createProductSalesMap(productSalesLast7DaysRows);
+    const productSalesLifetimeMap = createProductSalesMap(productSalesLifetimeRows);
+
+    const productPerformance = productCatalog
+      .map((product) => {
+        const last7 = productSalesLast7DaysMap.get(product.id);
+        const last30 = productTotals.get(product.id);
+        const lifetime = productSalesLifetimeMap.get(product.id);
+        const priceValue = normalizeDecimal(product.price);
+
+        const last7Quantity = last7?.quantity ?? 0;
+        const last7Revenue = last7?.revenue ?? 0;
+        const last30Quantity = last30?.quantity ?? 0;
+        const last30Revenue = last30?.revenue ?? 0;
+        const lifetimeQuantity = lifetime?.quantity ?? 0;
+        const lifetimeRevenue = lifetime?.revenue ?? 0;
+
+        return {
+          productId: product.id,
+          title: product.title,
+          category: product.category ?? 'Uncategorized',
+          isActive: product.isActive,
+          inventoryCount: product.inventoryCount,
+          price: roundCurrency(priceValue),
+          sales: {
+            last7Days: {
+              quantity: last7Quantity,
+              revenue: roundCurrency(last7Revenue)
+            },
+            last30Days: {
+              quantity: last30Quantity,
+              revenue: roundCurrency(last30Revenue)
+            },
+            lifetime: {
+              quantity: lifetimeQuantity,
+              revenue: roundCurrency(lifetimeRevenue)
+            }
           }
-        },
-        select: { id: true, title: true }
+        };
+      })
+      .sort((a, b) => {
+        const revenueDiff = b.sales.last7Days.revenue - a.sales.last7Days.revenue;
+        if (revenueDiff !== 0) {
+          return revenueDiff;
+        }
+        return b.sales.last30Days.revenue - a.sales.last30Days.revenue;
       });
 
-      const titleMap: Record<string, string> = {};
-      for (const product of productDetails) {
-        titleMap[product.id] = product.title;
+    const roundToPrecision = (value: number, precision: number) => {
+      if (precision === 0) {
+        return Math.round(value);
       }
-      productTitles = titleMap;
+      const factor = 10 ** precision;
+      return Math.round(value * factor) / factor;
+    };
+
+    const createSummaryMetric = (currentValue: number, previousValue: number, precision: number) => {
+      const deltaAbsoluteRaw = currentValue - previousValue;
+      const deltaPercent = previousValue === 0
+        ? currentValue === 0
+          ? 0
+          : null
+        : Math.round(((deltaAbsoluteRaw / previousValue) * 100) * 10) / 10;
+
+      return {
+        current: roundToPrecision(currentValue, precision),
+        previous: roundToPrecision(previousValue, precision),
+        deltaAbsolute: roundToPrecision(deltaAbsoluteRaw, precision),
+        deltaPercent
+      };
+    };
+
+    const daily = currentDailyKeys.map((dateKey) => {
+      const bucket = currentDailyBuckets.get(dateKey)!;
+      return {
+        date: dateKey,
+        total: Number(bucket.total.toFixed(2)),
+        transactions: bucket.transactions
+      };
+    });
+
+    const weekly = currentWeeklyKeys.map((weekStartKey) => {
+      const bucket = currentWeeklyBuckets.get(weekStartKey)!;
+      return {
+        weekStart: weekStartKey,
+        total: Number(bucket.total.toFixed(2)),
+        transactions: bucket.transactions
+      };
+    });
+
+    const hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({ hour, transactions: 0 }));
+
+    for (const row of hourlyTransactionsRows) {
+      const hourValue = Number(row.hour);
+      if (!Number.isFinite(hourValue)) {
+        continue;
+      }
+
+      const hourIndex = Math.trunc(hourValue);
+      if (hourIndex < 0 || hourIndex > 23) {
+        continue;
+      }
+
+      const transactionsRounded = Math.max(0, Math.round(normalizeDecimal(row.transactions)));
+      hourlyTotals[hourIndex].transactions = transactionsRounded;
     }
 
+    const hourlyTrend = hourlyTotals.map(({ hour, transactions }) => ({
+      hour: `${hour.toString().padStart(2, '0')}:00`,
+      percentage: lifetimeTransactions === 0 ? 0 : Number(((transactions / lifetimeTransactions) * 100).toFixed(1)),
+      transactions
+    }));
+
+    let bestDayRaw: { date: string; total: number; transactions: number } | null = null;
+    let slowDayRaw: { date: string; total: number; transactions: number } | null = null;
+
+    for (const dateKey of currentDailyKeys) {
+      const bucket = currentDailyBuckets.get(dateKey)!;
+      if (bucket.transactions === 0 && bucket.total === 0) {
+        continue;
+      }
+      if (!bestDayRaw || bucket.total > bestDayRaw.total) {
+        bestDayRaw = { date: dateKey, total: bucket.total, transactions: bucket.transactions };
+      }
+      if (!slowDayRaw || bucket.total < slowDayRaw.total) {
+        slowDayRaw = { date: dateKey, total: bucket.total, transactions: bucket.transactions };
+      }
+    }
+
+    const bestDay = bestDayRaw
+      ? {
+          date: bestDayRaw.date,
+          total: Number(bestDayRaw.total.toFixed(2)),
+          transactions: bestDayRaw.transactions
+        }
+      : null;
+
+    const slowDay = slowDayRaw
+      ? {
+          date: slowDayRaw.date,
+          total: Number(slowDayRaw.total.toFixed(2)),
+          transactions: slowDayRaw.transactions
+        }
+      : null;
+
+    const revenueSummary = createSummaryMetric(currentRevenue, previousRevenue, 2);
+    const transactionSummary = createSummaryMetric(currentTransactions, previousTransactions, 0);
+    const itemsSoldSummary = createSummaryMetric(currentItemsSold, previousItemsSold, 0);
+
+    const currentAverageOrderValue = currentTransactions === 0 ? 0 : currentRevenue / currentTransactions;
+    const previousAverageOrderValue = previousTransactions === 0 ? 0 : previousRevenue / previousTransactions;
+    const averageOrderValueSummary = createSummaryMetric(currentAverageOrderValue, previousAverageOrderValue, 2);
+
+    const totalTopProductRevenue = sortedTopProducts.reduce((sum, [, totals]) => sum + totals.revenue, 0);
+
+    const alerts: string[] = [];
+    if (currentTransactions === 0) {
+      alerts.push('No transactions recorded in the last 7 days.');
+    }
+    if (revenueSummary.deltaPercent !== null && revenueSummary.deltaPercent < -10) {
+      alerts.push(`Revenue dropped ${Math.abs(revenueSummary.deltaPercent).toFixed(1)}% compared to the previous 7 days.`);
+    }
+    if (averageOrderValueSummary.deltaPercent !== null && averageOrderValueSummary.deltaPercent > 15) {
+      alerts.push(`Average order value increased ${averageOrderValueSummary.deltaPercent.toFixed(1)}% week-over-week.`);
+    }
+    if (sortedTopProducts.length > 0 && totalTopProductRevenue > 0) {
+      const leadingProduct = sortedTopProducts[0];
+      const share = Math.round((leadingProduct[1].revenue / totalTopProductRevenue) * 100);
+      if (share >= 60) {
+        alerts.push(`${share}% of the last 30 days revenue came from ${productTitles[leadingProduct[0]] ?? leadingProduct[0]}.`);
+      }
+    }
+
+    const topProducts = sortedTopProducts.map(([productId, totals]) => ({
+      productId,
+      title: productTitles[productId] ?? productId,
+      quantity: totals.quantity,
+      revenue: Number(totals.revenue.toFixed(2))
+    }));
+
+    const lifetimeRevenue = normalizeDecimal(purchaseAggregate._sum.totalAmount);
+    const lifetimeItemsSold = purchaseItemAggregate._sum.quantity ?? 0;
+
     res.json({
-      totalTransactions: purchaseAggregate._count._all ?? 0,
-      totalRevenue: normalizeDecimal(purchaseAggregate._sum.totalAmount),
-      itemsSold: purchaseItemAggregate._sum.quantity ?? 0,
-      daily: Object.entries(dailyBucket).map(([date, totals]) => ({
-        date,
-        total: Number(totals.total.toFixed(2)),
-        transactions: totals.transactions
-      })),
-      weekly: Object.entries(weeklyBucket)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([weekStart, totals]) => ({
-          weekStart,
-          total: Number(totals.total.toFixed(2)),
-          transactions: totals.transactions
-        })),
-      topProducts: sortedTopProducts.map(([productId, totals]) => ({
-        productId,
-        title: productTitles[productId] ?? productId,
-        quantity: totals.quantity,
-        revenue: Number(totals.revenue.toFixed(2))
-      }))
+      totalTransactions: lifetimeTransactions,
+      totalRevenue: Number(lifetimeRevenue.toFixed(2)),
+      itemsSold: lifetimeItemsSold,
+      lifetime: {
+        revenue: Number(lifetimeRevenue.toFixed(2)),
+        transactions: lifetimeTransactions,
+        itemsSold: lifetimeItemsSold
+      },
+      period: {
+        current: {
+          start: toIsoDate(currentDailyStart),
+          end: toIsoDate(todayStart)
+        },
+        previous: {
+          start: toIsoDate(previousDailyStart),
+          end: toIsoDate(previousDailyEnd)
+        }
+      },
+      summary: {
+        revenue: revenueSummary,
+        transactions: transactionSummary,
+        itemsSold: itemsSoldSummary,
+        averageOrderValue: averageOrderValueSummary
+      },
+      daily,
+      weekly,
+      categoryMix,
+      hourlyTrend,
+      topProducts,
+      productPerformance,
+      highlights: {
+        bestDay,
+        slowDay
+      },
+      alerts
     });
   } catch (error) {
     res.status(500).json({ message: 'Unable to load sales stats.' });
