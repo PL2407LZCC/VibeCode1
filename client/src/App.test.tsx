@@ -23,10 +23,31 @@ describe('App kiosk flow', () => {
   });
 
   it('loads products and allows adding to cart', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockProducts
-    } as Response);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/products') && method === 'GET') {
+        return {
+          ok: true,
+          json: async () => mockProducts
+        } as Response;
+      }
+
+      if (url.endsWith('/purchases') && method === 'POST') {
+        return {
+          ok: true,
+          json: async () => ({ id: 'purchase-123' })
+        } as Response;
+      }
+
+      throw new Error(`Unhandled fetch request: ${method} ${url}`);
+    });
 
     render(<App />);
 
@@ -43,6 +64,30 @@ describe('App kiosk flow', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/total/i).nextSibling).toHaveTextContent('€2.50');
+    });
+
+    const payButton = screen.getByRole('button', { name: /^pay$/i });
+    expect(payButton).toBeEnabled();
+
+    await userEvent.click(payButton);
+
+    const dialog = await screen.findByRole('dialog', { name: /scan to pay/i });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm successful payment/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /confirm successful payment/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/purchases'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByText(/total/i).nextSibling).toHaveTextContent('€0.00');
     });
   });
 

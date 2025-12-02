@@ -119,3 +119,41 @@ export type ProductPerformanceEntry = {
     lifetime: ProductPerformanceWindow;
   };
 };
+
+export type TransactionLineItem = {
+  productId: string;
+  title: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+};
+
+export type TransactionCategoryBreakdownEntry = {
+  category: string;
+  quantity: number;
+  revenue: number;
+};
+
+export type AdminTransaction = {
+  id: string;
+  reference: string | null;
+  status: string;
+  notes: string | null;
+  totalAmount: number;
+  createdAt: string;
+  lineItems: TransactionLineItem[];
+  categoryBreakdown: TransactionCategoryBreakdownEntry[];
+};
+
+export type TransactionRange = {
+  start: string;
+  end: string;
+};
+
+export type AdminTransactionsResponse = {
+  range: TransactionRange;
+  categoryFilter: string | null;
+  categories: string[];
+  transactions: AdminTransaction[];
+};

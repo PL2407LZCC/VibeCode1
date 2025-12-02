@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import { Prisma } from '@prisma/client';
 import multer, { MulterError } from 'multer';
 import cors from 'cors';
 import requireAdmin from './middleware/requireAdmin';
@@ -565,7 +566,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         GROUP BY "purchase_items"."productId"
       `,
       prisma.$queryRaw<HourlyTransactionsRow[]>`
-        SELECT EXTRACT(HOUR FROM "purchases"."createdAt")::int AS "hour",
+        SELECT EXTRACT(HOUR FROM timezone('Europe/Helsinki', "purchases"."createdAt" AT TIME ZONE 'UTC'))::int AS "hour",
                COUNT(*)::bigint AS "transactions"
         FROM "purchases"
         GROUP BY 1
@@ -921,6 +922,208 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Unable to load sales stats.' });
+  }
+});
+
+type AdminTransactionsQuery = {
+  start?: string;
+  end?: string;
+  category?: string;
+};
+
+type TransactionRow = {
+  id: string;
+  reference: string;
+  totalAmount: Prisma.Decimal;
+  status: string;
+  notes: string | null;
+  createdAt: Date;
+  items: Array<{
+    quantity: number;
+    unitPrice: Prisma.Decimal;
+    product: {
+      id: string;
+      title: string;
+      category: string;
+    };
+  }>;
+};
+
+const MAX_TRANSACTION_WINDOW_DAYS = 90;
+
+const parseTransactionQuery = (query: AdminTransactionsQuery) => {
+  const now = new Date();
+  const today = startOfDayUtc(now);
+
+  let startDate: Date | null = null;
+  let endDate: Date | null = null;
+
+  if (query.start) {
+    const parsed = new Date(query.start);
+    if (Number.isNaN(parsed.getTime())) {
+      return { error: 'Invalid start date. Use ISO 8601 (YYYY-MM-DD).' } as const;
+    }
+    startDate = startOfDayUtc(parsed);
+  }
+
+  if (query.end) {
+    const parsed = new Date(query.end);
+    if (Number.isNaN(parsed.getTime())) {
+      return { error: 'Invalid end date. Use ISO 8601 (YYYY-MM-DD).' } as const;
+    }
+    endDate = addDaysUtc(startOfDayUtc(parsed), 1);
+  }
+
+  if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+    return { error: 'Start date must be before end date.' } as const;
+  }
+
+  if (!startDate && endDate) {
+    startDate = addDaysUtc(endDate, -MAX_TRANSACTION_WINDOW_DAYS);
+  }
+
+  if (!startDate) {
+    startDate = addDaysUtc(today, -(MAX_TRANSACTION_WINDOW_DAYS - 1));
+  }
+
+  if (!endDate) {
+    endDate = addDaysUtc(today, 1);
+  }
+
+  const windowMs = endDate.getTime() - startDate.getTime();
+  const maxWindowMs = MAX_TRANSACTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  if (windowMs > maxWindowMs) {
+    return { error: `Date range cannot exceed ${MAX_TRANSACTION_WINDOW_DAYS} days.` } as const;
+  }
+
+  const category = normalizeCategory(query.category);
+
+  return {
+    data: {
+      start: startDate,
+      end: endDate,
+      categoryFilter: category === 'Uncategorized' && !query.category ? null : category
+    }
+  } as const;
+};
+
+const toTransactionSummary = (rows: TransactionRow[]) => {
+  return rows.map((transaction) => {
+    const totalAmount = normalizeDecimal(transaction.totalAmount);
+    const sortedItems = [...transaction.items].sort((a, b) => a.product.title.localeCompare(b.product.title));
+    const lineItems = sortedItems.map((item) => ({
+      productId: item.product.id,
+      title: item.product.title,
+      category: item.product.category ?? 'Uncategorized',
+      quantity: item.quantity,
+      unitPrice: normalizeDecimal(item.unitPrice),
+      subtotal: normalizeDecimal(item.unitPrice) * item.quantity
+    }));
+
+    const categoryBreakdown = lineItems.reduce<Record<string, { quantity: number; revenue: number }>>((acc, item) => {
+      const key = item.category ?? 'Uncategorized';
+      if (!acc[key]) {
+        acc[key] = { quantity: 0, revenue: 0 };
+      }
+      acc[key].quantity += item.quantity;
+      acc[key].revenue += item.subtotal;
+      return acc;
+    }, {});
+
+    return {
+      id: transaction.id,
+      reference: transaction.reference,
+      status: transaction.status,
+      notes: transaction.notes ?? null,
+      totalAmount: Number(totalAmount.toFixed(2)),
+      createdAt: transaction.createdAt.toISOString(),
+      lineItems,
+      categoryBreakdown: Object.entries(categoryBreakdown)
+        .map(([category, totals]) => ({
+          category,
+          quantity: totals.quantity,
+          revenue: Number(totals.revenue.toFixed(2))
+        }))
+        .sort((a, b) => b.revenue - a.revenue)
+    };
+  });
+};
+
+adminRouter.get('/transactions', async (req: Request<unknown, unknown, unknown, AdminTransactionsQuery>, res: Response) => {
+  const validation = parseTransactionQuery(req.query);
+  if ('error' in validation) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  const { start, end, categoryFilter } = validation.data;
+
+  try {
+    const transactions = await prisma.purchase.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lt: end
+        },
+        status: {
+          not: 'CANCELLED'
+        },
+        ...(categoryFilter
+          ? {
+              items: {
+                some: {
+                  product: {
+                    category: categoryFilter
+                  }
+                }
+              }
+            }
+          : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        reference: true,
+        totalAmount: true,
+        status: true,
+        notes: true,
+        createdAt: true,
+        items: {
+          select: {
+            quantity: true,
+            unitPrice: true,
+            product: {
+              select: {
+                id: true,
+                title: true,
+                category: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const categories = (await prisma.product.findMany({
+      select: {
+        category: true
+      },
+      distinct: ['category']
+    }))
+      .map((row) => normalizeCategory(row.category))
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .sort((a, b) => a.localeCompare(b));
+
+    res.json({
+      range: {
+        start: start.toISOString(),
+        end: addDaysUtc(end, -1).toISOString().slice(0, 10)
+      },
+      categoryFilter: categoryFilter ?? null,
+      categories,
+      transactions: toTransactionSummary(transactions as TransactionRow[])
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Unable to load transactions.' });
   }
 });
 
