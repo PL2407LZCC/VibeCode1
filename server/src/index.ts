@@ -2,6 +2,7 @@ import express, { type Request, type Response } from 'express';
 import { Prisma } from '@prisma/client';
 import multer, { MulterError } from 'multer';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import requireAdmin from './middleware/requireAdmin';
 import {
   listActiveProducts,
@@ -23,6 +24,18 @@ import {
   createUploadFilename,
   toPublicUploadPath
 } from './lib/uploads';
+import { env } from './lib/env';
+import {
+  ADMIN_SESSION_COOKIE,
+  clearAdminSessionCookie,
+  createAdminSessionToken
+} from './lib/adminSession';
+import {
+  authenticateWithPassword,
+  confirmPasswordReset,
+  requestPasswordReset
+} from './services/adminAuthService';
+import { sendPasswordResetEmail } from './services/adminEmailService';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
@@ -31,6 +44,16 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:51
   .map((origin) => origin.trim())
   .filter(Boolean);
 const shouldAutoSeed = (process.env.AUTO_SEED ?? 'true').toLowerCase() !== 'false';
+const secureCookies = env.NODE_ENV === 'production';
+
+const setAdminSessionCookie = (res: Response, token: string, maxAgeMs: number) => {
+  res.cookie(ADMIN_SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: secureCookies,
+    maxAge: maxAgeMs
+  });
+};
 
 type PurchaseItemPayload = {
   productId: unknown;
@@ -156,6 +179,7 @@ app.use(
     origin: allowedOrigins.length > 0 ? allowedOrigins : true
   })
 );
+app.use(cookieParser(env.ADMIN_SESSION_SECRET));
 app.use(express.json());
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -178,6 +202,131 @@ app.get('/config', async (_req: Request, res: Response) => {
     res.json(config);
   } catch (error) {
     res.status(500).json({ message: 'Unable to load kiosk configuration.' });
+  }
+});
+
+app.post('/auth/login', async (req: Request, res: Response) => {
+  const { identifier, password, remember } = req.body as {
+    identifier?: unknown;
+    password?: unknown;
+    remember?: unknown;
+  };
+
+  if (typeof identifier !== 'string' || identifier.trim().length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Identifier and password are required.' });
+  }
+
+  try {
+    const authResult = await authenticateWithPassword(identifier, password);
+
+    if (authResult.status === 'SUCCESS') {
+      const session = createAdminSessionToken(authResult.admin, {
+        remember: remember === true
+      });
+
+      setAdminSessionCookie(res, session.token, session.maxAgeMs);
+
+      return res.json({
+        admin: authResult.admin,
+        needsPasswordUpgrade: authResult.needsPasswordUpgrade
+      });
+    }
+
+    clearAdminSessionCookie(res);
+
+    if (authResult.status === 'INVALID_CREDENTIALS') {
+      return res.status(401).json({
+        message: 'Invalid email/username or password.',
+        remainingAttempts: authResult.remainingAttempts
+      });
+    }
+
+    if (authResult.status === 'ACCOUNT_LOCKED') {
+      return res.status(423).json({
+        message: 'Account locked due to too many failed attempts. Please reset your password.'
+      });
+    }
+
+    if (authResult.status === 'ACCOUNT_DISABLED') {
+      return res.status(403).json({
+        message: 'Account is disabled. Contact support.'
+      });
+    }
+
+    return res.status(500).json({ message: 'Unable to login.' });
+  } catch (error) {
+    console.error('Failed to authenticate admin user', error);
+    return res.status(500).json({ message: 'Unable to login.' });
+  }
+});
+
+app.post('/auth/logout', (_req: Request, res: Response) => {
+  clearAdminSessionCookie(res);
+  res.status(204).send();
+});
+
+app.post('/auth/password-reset/request', async (req: Request, res: Response) => {
+  const { email } = req.body as { email?: unknown };
+
+  if (typeof email !== 'string' || email.trim().length === 0) {
+    return res.status(400).json({ message: 'Email is required.' });
+  }
+
+  try {
+    const result = await requestPasswordReset(email);
+    const responseBody: Record<string, unknown> = {
+      message: 'If an account matches that email, password reset instructions have been sent.'
+    };
+
+    if (result.token && result.admin && result.expiresAt) {
+      await sendPasswordResetEmail({
+        email: result.admin.email,
+        username: result.admin.username,
+        token: result.token,
+        expiresAt: result.expiresAt
+      });
+    }
+
+    if (result.token && env.NODE_ENV !== 'production') {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt?.toISOString();
+      responseBody.admin = result.admin;
+    }
+
+    return res.status(202).json(responseBody);
+  } catch (error) {
+    console.error('Failed to issue password reset token', error);
+    return res.status(500).json({ message: 'Unable to process reset request.' });
+  }
+});
+
+app.post('/auth/password-reset/confirm', async (req: Request, res: Response) => {
+  const { token, password } = req.body as { token?: unknown; password?: unknown };
+
+  if (typeof token !== 'string' || token.length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Reset token and new password are required.' });
+  }
+
+  try {
+    const result = await confirmPasswordReset(token, password);
+
+    if (result.status === 'SUCCESS') {
+      const session = createAdminSessionToken(result.admin);
+      setAdminSessionCookie(res, session.token, session.maxAgeMs);
+      return res.json({
+        message: 'Password updated successfully.',
+        admin: result.admin
+      });
+    }
+
+    if (result.status === 'POLICY_VIOLATION') {
+      return res.status(422).json({ message: result.message });
+    }
+
+    return res.status(400).json({ message: 'Invalid or expired reset token.' });
+  } catch (error) {
+    console.error('Failed to confirm password reset', error);
+    return res.status(500).json({ message: 'Unable to complete password reset.' });
   }
 });
 
@@ -1152,8 +1301,18 @@ const initialize = async () => {
     try {
       const productCount = await prisma.product.count();
       if (productCount === 0) {
-        await seedDatabase(prisma);
+        const seedResult = await seedDatabase(prisma);
         console.log('Database seeded with mock data on startup.');
+
+        if (seedResult.adminAccount) {
+          if (env.NODE_ENV !== 'production') {
+            console.log(
+              `Created default admin account -> email: ${seedResult.adminAccount.email}, username: ${seedResult.adminAccount.username}, password: ${seedResult.adminAccount.password}`
+            );
+          } else {
+            console.log('Default admin account ensured. Update credentials immediately.');
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to seed database on startup', error);

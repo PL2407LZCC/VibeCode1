@@ -20,6 +20,12 @@ Latest stable releases for the versions.
 
 GitHub actions only for build
 
+## Admin Authentication Setup
+
+- Copy `server/.env.example` to `server/.env` (or set environment variables another way) and replace placeholder values, especially `ADMIN_SESSION_SECRET` and SMTP credentials if password reset emails should send.
+- When the database seeds for the first time it now creates an `admin@localhost` user with a random password printed to the console (development only). Change this password immediately and disable `AUTO_SEED` once production data exists.
+- Update the `docker-compose.yml` environment block to mirror your secrets when running locally with containers.
+
 ## Admin Image Uploads
 
 - Admin clients can upload product images via `POST /admin/uploads` with the `image` field; the request must include the `x-admin-token` header.

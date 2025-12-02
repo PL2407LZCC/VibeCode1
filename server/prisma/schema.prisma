@@ -78,3 +78,32 @@ model KioskSetting {
 
   @@map("kiosk_settings")
 }
+
+model AdminUser {
+  id                 String                @id @default(cuid())
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  email              String                @unique
+  username           String                @unique
+  passwordHash       String
+  passwordAlgorithm  String
+  passwordVersion    Int                   @default(1)
+  isActive           Boolean               @default(true)
+  lastLoginAt        DateTime?
+  failedLoginAttempts Int                  @default(0)
+  resetTokens        PasswordResetToken[]
+
+  @@map("admin_users")
+}
+
+model PasswordResetToken {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  adminUser    AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  adminUserId  String
+
+  @@map("password_reset_tokens")
+}
