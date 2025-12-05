@@ -28,7 +28,9 @@ import { env } from './lib/env';
 import {
   ADMIN_SESSION_COOKIE,
   clearAdminSessionCookie,
-  createAdminSessionToken
+  createAdminSessionToken,
+  getSessionTokenFromRequest,
+  verifyAdminSessionToken
 } from './lib/adminSession';
 import {
   authenticateWithPassword,
@@ -36,6 +38,10 @@ import {
   requestPasswordReset
 } from './services/adminAuthService';
 import { sendPasswordResetEmail } from './services/adminEmailService';
+import {
+  findAdminUserById,
+  toPublicAdminUser
+} from './repositories/adminUserRepository';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
@@ -176,7 +182,8 @@ const MAX_UPLOAD_SIZE_MB = Math.max(1, Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    credentials: true
   })
 );
 app.use(cookieParser(env.ADMIN_SESSION_SECRET));
@@ -202,6 +209,34 @@ app.get('/config', async (_req: Request, res: Response) => {
     res.json(config);
   } catch (error) {
     res.status(500).json({ message: 'Unable to load kiosk configuration.' });
+  }
+});
+
+app.get('/auth/session', async (req: Request, res: Response) => {
+  const sessionToken = getSessionTokenFromRequest(req);
+
+  if (!sessionToken) {
+    return res.json({ admin: null, status: 'EMPTY' as const });
+  }
+
+  const verification = verifyAdminSessionToken(sessionToken);
+
+  if (verification.status !== 'VALID') {
+    clearAdminSessionCookie(res);
+    return res.json({ admin: null, status: verification.status });
+  }
+
+  try {
+    const admin = await findAdminUserById(verification.claims.sub);
+    if (!admin || !admin.isActive) {
+      clearAdminSessionCookie(res);
+      return res.json({ admin: null, status: 'INVALID' as const });
+    }
+
+    return res.json({ admin: toPublicAdminUser(admin), status: 'VALID' as const });
+  } catch (error) {
+    console.error('Failed to resolve admin session', error);
+    return res.status(500).json({ message: 'Unable to verify session.' });
   }
 });
 

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ADMIN_TOKEN_MISSING_MESSAGE } from './useAdminDashboard';
 import type { AdminTransaction, AdminTransactionsResponse, TransactionRange } from '../types';
-
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+import { UnauthorizedError, useAdminAuth } from '../providers/AdminAuthProvider';
 
 type TransactionFilters = {
   startDate: string;
@@ -43,7 +41,7 @@ type UseAdminTransactionsState = {
 export type { TransactionFilters };
 
 export function useAdminTransactions(initial?: Partial<TransactionFilters>): UseAdminTransactionsState {
-  const adminToken = import.meta.env.VITE_ADMIN_TOKEN;
+  const { status: authStatus, fetchWithAuth } = useAdminAuth();
   const baseFilters = useMemo(() => ({ ...createDefaultFilters(), ...initial }), [initial]);
   const filtersRef = useRef<TransactionFilters>(baseFilters);
   const [appliedFilters, setAppliedFilters] = useState<TransactionFilters>(baseFilters);
@@ -52,7 +50,7 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
   const [range, setRange] = useState<TransactionRange | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(adminToken ? null : ADMIN_TOKEN_MISSING_MESSAGE);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     filtersRef.current = baseFilters;
@@ -61,8 +59,8 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
 
   const fetchTransactions = useCallback(
     async (overrides?: Partial<TransactionFilters>) => {
-      if (!adminToken) {
-        setError(ADMIN_TOKEN_MISSING_MESSAGE);
+      if (authStatus !== 'authenticated') {
+        setError('Sign in to inspect transactions.');
         return;
       }
 
@@ -89,24 +87,7 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/admin/transactions?${params.toString()}`, {
-          headers: {
-            'x-admin-token': adminToken
-          }
-        });
-
-        if (!response.ok) {
-          let message = `Request failed (${response.status})`;
-          try {
-            const body = (await response.json()) as { message?: string };
-            if (body?.message) {
-              message = body.message;
-            }
-          } catch {
-            // Ignore JSON parsing issues and fall back to the default message.
-          }
-          throw new Error(message);
-        }
+        const response = await fetchWithAuth(`/admin/transactions?${params.toString()}`);
 
         const payload = (await response.json()) as AdminTransactionsResponse;
         setTransactions(Array.isArray(payload.transactions) ? payload.transactions : []);
@@ -116,17 +97,35 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
         filtersRef.current = nextFilters;
         setAppliedFilters(nextFilters);
       } catch (fetchError) {
-        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load transactions.');
+        if (fetchError instanceof UnauthorizedError) {
+          setError(fetchError.message);
+        } else {
+          setError(fetchError instanceof Error ? fetchError.message : 'Failed to load transactions.');
+        }
       } finally {
         setIsLoading(false);
       }
     },
-    [adminToken]
+    [authStatus, fetchWithAuth]
   );
 
   useEffect(() => {
-    void fetchTransactions(baseFilters);
-  }, [fetchTransactions, baseFilters]);
+    if (authStatus === 'authenticated') {
+      void fetchTransactions(baseFilters);
+      return;
+    }
+
+    if (authStatus === 'unauthenticated') {
+      setTransactions([]);
+      setCategories([]);
+      setRange(null);
+      setCategoryFilter(null);
+      setIsLoading(false);
+      setError('Sign in to inspect transactions.');
+    } else {
+      setIsLoading(true);
+    }
+  }, [authStatus, fetchTransactions, baseFilters]);
 
   return {
     transactions,

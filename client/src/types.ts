@@ -12,6 +12,16 @@ export type CartLine = {
   quantity: number;
 };
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  username: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AdminProduct = {
   id: string;
   title: string;

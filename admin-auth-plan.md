@@ -41,12 +41,12 @@
 - [x] Configure environment variables for SMTP host, port, credentials, from address.
 
 ### 6. Frontend Updates
-- [ ] Create admin login page with form validation and error handling.
-- [ ] Update admin dashboard shell to require authentication (redirect/guard if unauthenticated).
-- [ ] Add password reset request form and reset confirmation form (new password + confirmation).
-- [ ] Handle tokenized reset link (e.g. `/admin/reset?token=...`).
-- [ ] Store session token securely (prefer httpOnly cookie; otherwise, use secure storage and attach to requests).
-- [ ] Replace usages of `VITE_ADMIN_TOKEN` with authenticated session handling; ensure API hook adds auth headers automatically.
+- [x] Create admin login page with form validation and error handling.
+- [x] Update admin dashboard shell to require authentication (redirect/guard if unauthenticated).
+- [x] Add password reset request form and reset confirmation form (new password + confirmation).
+- [x] Handle tokenized reset link (e.g. `/admin/reset?token=...`).
+- [x] Store session token securely (prefer httpOnly cookie; otherwise, use secure storage and attach to requests).
+- [x] Replace usages of `VITE_ADMIN_TOKEN` with authenticated session handling; ensure API hook adds auth headers automatically.
 
 ### 7. Security & Compliance Considerations
 - [ ] Enforce strong password policy (min length, complexity or passphrase guidance).

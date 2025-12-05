@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import type { Request, Response } from 'express';
 import type { AdminUserPublic, AdminUserWithSecrets } from '../repositories/adminUserRepository';
 import { env } from './env';
 
@@ -82,10 +83,23 @@ export function verifyAdminSessionToken(token: string): VerifySessionResult {
   }
 }
 
-export function clearAdminSessionCookie(res: import('express').Response) {
+export function clearAdminSessionCookie(res: Response) {
   res.clearCookie(ADMIN_SESSION_COOKIE, {
     httpOnly: true,
     sameSite: 'lax',
     secure: env.NODE_ENV === 'production'
   });
+}
+
+export function getSessionTokenFromRequest(req: Request): string | null {
+  const requestWithCookies = req as Request & {
+    signedCookies?: Record<string, unknown>;
+    cookies?: Record<string, unknown>;
+  };
+
+  const signed = requestWithCookies.signedCookies ?? {};
+  const unsigned = requestWithCookies.cookies ?? {};
+  const rawValue = signed[ADMIN_SESSION_COOKIE] ?? unsigned[ADMIN_SESSION_COOKIE];
+
+  return typeof rawValue === 'string' ? rawValue : null;
 }

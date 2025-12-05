@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import {
   ADMIN_SESSION_COOKIE,
   clearAdminSessionCookie,
+  getSessionTokenFromRequest,
   verifyAdminSessionToken
 } from '../lib/adminSession';
 import { findAdminUserById, toPublicAdminUser } from '../repositories/adminUserRepository';
@@ -19,10 +20,7 @@ const legacyAdminPlaceholder = {
 } as const;
 
 export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const signedCookies = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies ?? {};
-  const unsignedCookies = req.cookies ?? {};
-  const cookieValueRaw = signedCookies[ADMIN_SESSION_COOKIE] ?? unsignedCookies[ADMIN_SESSION_COOKIE];
-  const sessionToken = typeof cookieValueRaw === 'string' ? cookieValueRaw : null;
+  const sessionToken = getSessionTokenFromRequest(req);
 
   if (sessionToken) {
     const verification = verifyAdminSessionToken(sessionToken);

@@ -3,6 +3,37 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
+type MockAuthState = {
+  status: 'loading' | 'authenticated' | 'unauthenticated';
+  admin: null;
+  error: string | null;
+  clearError: ReturnType<typeof vi.fn>;
+  login: ReturnType<typeof vi.fn>;
+  logout: ReturnType<typeof vi.fn>;
+  requestPasswordReset: ReturnType<typeof vi.fn>;
+  confirmPasswordReset: ReturnType<typeof vi.fn>;
+  fetchWithAuth: ReturnType<typeof vi.fn>;
+};
+
+const createAuthState = (overrides: Partial<MockAuthState> = {}): MockAuthState => ({
+  status: 'unauthenticated',
+  admin: null,
+  error: null,
+  clearError: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn().mockResolvedValue(undefined),
+  requestPasswordReset: vi.fn(),
+  confirmPasswordReset: vi.fn(),
+  fetchWithAuth: vi.fn(),
+  ...overrides
+});
+
+const useAdminAuthMock = vi.fn(() => createAuthState());
+
+vi.mock('./providers/AdminAuthProvider', () => ({
+  useAdminAuth: () => useAdminAuthMock()
+}));
+
 const mockProducts = {
   items: [
     {
@@ -20,6 +51,7 @@ describe('App kiosk flow', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+    useAdminAuthMock.mockReturnValue(createAuthState());
   });
 
   it('loads products and allows adding to cart', async () => {

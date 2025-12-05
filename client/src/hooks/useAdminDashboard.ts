@@ -8,10 +8,9 @@ import type {
   SalesHourlyBucket,
   SalesSummaryMetric
 } from '../types';
+import { UnauthorizedError, useAdminAuth } from '../providers/AdminAuthProvider';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-export const ADMIN_TOKEN_MISSING_MESSAGE =
-  'Admin token is not configured. Set VITE_ADMIN_TOKEN in your environment to unlock admin tools.';
 
 type CreateProductInput = {
   title: string;
@@ -192,64 +191,22 @@ const parseSalesStats = (payload: any): SalesStats => {
 };
 
 export function useAdminDashboard(): AdminDashboardState {
-  const adminToken = import.meta.env.VITE_ADMIN_TOKEN;
+  const { status: authStatus, fetchWithAuth } = useAdminAuth();
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [config, setConfig] = useState<KioskConfig | null>(null);
   const [stats, setStats] = useState<SalesStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(adminToken ? null : ADMIN_TOKEN_MISSING_MESSAGE);
-
-  const authorizedFetch = useCallback(
-    async (path: string, init?: RequestInit) => {
-      if (!adminToken) {
-        throw new Error(ADMIN_TOKEN_MISSING_MESSAGE);
-      }
-
-      const headers = new Headers(init?.headers ?? {});
-      const body = init?.body as BodyInit | null | undefined;
-      const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-      if (body && !isFormData && !headers.has('Content-Type')) {
-        headers.set('Content-Type', 'application/json');
-      }
-      headers.set('x-admin-token', adminToken);
-
-      const response = await fetch(`${API_URL}${path}`, {
-        ...init,
-        headers
-      });
-
-      if (!response.ok) {
-        let message = `Request failed (${response.status})`;
-        try {
-          const body = await response.json();
-          if (body && typeof body.message === 'string') {
-            message = body.message;
-          }
-        } catch (err) {
-          // Ignore JSON parse errors – message fallback already set.
-        }
-        throw new Error(message);
-      }
-
-      return response;
-    },
-    [adminToken]
-  );
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!adminToken) {
-      setError(ADMIN_TOKEN_MISSING_MESSAGE);
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
 
     try {
       const [productsResponse, configResponse, statsResponse] = await Promise.all([
-        authorizedFetch('/admin/products'),
-        authorizedFetch('/config'),
-        authorizedFetch('/admin/stats/sales')
+        fetchWithAuth('/admin/products'),
+        fetchWithAuth('/config'),
+        fetchWithAuth('/admin/stats/sales')
       ]);
 
       const productPayload = await productsResponse.json();
@@ -268,53 +225,57 @@ export function useAdminDashboard(): AdminDashboardState {
       });
       setStats(parseSalesStats(statsPayload));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected admin dashboard error');
+      if (err instanceof UnauthorizedError) {
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Unexpected admin dashboard error');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [adminToken, authorizedFetch]);
+  }, [fetchWithAuth]);
 
   const createProduct = useCallback(
     async (input: CreateProductInput) => {
-      await authorizedFetch('/admin/products', {
+      await fetchWithAuth('/admin/products', {
         method: 'POST',
         body: JSON.stringify(input)
       });
       await load();
     },
-    [authorizedFetch, load]
+    [fetchWithAuth, load]
   );
 
   const updateProduct = useCallback(
     async (id: string, input: UpdateProductInput) => {
-      await authorizedFetch(`/admin/products/${id}`, {
+      await fetchWithAuth(`/admin/products/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input)
       });
       await load();
     },
-    [authorizedFetch, load]
+    [fetchWithAuth, load]
   );
 
   const toggleInventory = useCallback(
     async (inventoryEnabled: boolean) => {
-      await authorizedFetch('/admin/kiosk-mode', {
+      await fetchWithAuth('/admin/kiosk-mode', {
         method: 'PATCH',
         body: JSON.stringify({ inventoryEnabled })
       });
       await load();
     },
-    [authorizedFetch, load]
+    [fetchWithAuth, load]
   );
 
   const deleteProduct = useCallback(
     async (id: string) => {
-      await authorizedFetch(`/admin/products/${id}`, {
+      await fetchWithAuth(`/admin/products/${id}`, {
         method: 'DELETE'
       });
       await load();
     },
-    [authorizedFetch, load]
+    [fetchWithAuth, load]
   );
 
   const uploadImage = useCallback(
@@ -326,7 +287,7 @@ export function useAdminDashboard(): AdminDashboardState {
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await authorizedFetch('/admin/uploads', {
+      const response = await fetchWithAuth('/admin/uploads', {
         method: 'POST',
         body: formData
       });
@@ -341,12 +302,25 @@ export function useAdminDashboard(): AdminDashboardState {
 
       return { url, filename };
     },
-    [authorizedFetch]
+    [fetchWithAuth]
   );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (authStatus === 'authenticated') {
+      void load();
+      return;
+    }
+
+    if (authStatus === 'unauthenticated') {
+      setIsLoading(false);
+      setProducts([]);
+      setConfig(null);
+      setStats(null);
+      setError('Sign in to view admin tools.');
+    } else {
+      setIsLoading(true);
+    }
+  }, [authStatus, load]);
 
   return {
     products,
