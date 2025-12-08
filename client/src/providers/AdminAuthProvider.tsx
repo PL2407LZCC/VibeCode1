@@ -248,9 +248,11 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ token, password })
     });
 
-    let payload: { admin?: AdminUser } | null = null;
+    type PasswordResetConfirmPayload = { admin?: AdminUser; message?: string };
+
+    let payload: PasswordResetConfirmPayload | null = null;
     try {
-      payload = (await response.json()) as { admin?: AdminUser; message?: string };
+      payload = (await response.json()) as PasswordResetConfirmPayload;
     } catch {
       // Some error responses might not include JSON.
     }

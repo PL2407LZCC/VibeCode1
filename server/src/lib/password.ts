@@ -66,10 +66,7 @@ export async function verifyPassword(
     return { valid: false, needsRehash: true };
   }
 
-  const valid = await argon2.verify(stored.hash, candidate, {
-    ...DEFAULT_HASH_OPTIONS,
-    type: argon2.argon2id
-  });
+  const valid = await argon2.verify(stored.hash, candidate);
 
   return {
     valid,
