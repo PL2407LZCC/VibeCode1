@@ -53,8 +53,13 @@ model Purchase {
   totalAmount Decimal        @db.Decimal(10, 2)
   items       PurchaseItem[]
   notes       String?
+  isDeleted   Boolean        @default(false)
+  deletedAt   DateTime?
+  deletedByAdmin   AdminUser?   @relation("PurchaseDeletedBy", fields: [deletedByAdminId], references: [id])
+  deletedByAdminId String?
 
   @@map("purchases")
+  @@index([isDeleted])
 }
 
 model PurchaseItem {
@@ -92,6 +97,7 @@ model AdminUser {
   lastLoginAt        DateTime?
   failedLoginAttempts Int                  @default(0)
   resetTokens        PasswordResetToken[]
+  deletedPurchases   Purchase[]            @relation("PurchaseDeletedBy")
 
   @@map("admin_users")
 }

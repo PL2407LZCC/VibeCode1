@@ -6,6 +6,7 @@ type TransactionFilters = {
   startDate: string;
   endDate: string;
   category: string | null;
+  includeDeleted: boolean;
 };
 
 const addDaysUtc = (date: Date, amount: number) => {
@@ -23,7 +24,8 @@ const createDefaultFilters = (): TransactionFilters => {
   return {
     startDate,
     endDate,
-    category: null
+    category: null,
+    includeDeleted: false
   };
 };
 
@@ -36,6 +38,7 @@ type UseAdminTransactionsState = {
   isLoading: boolean;
   error: string | null;
   fetchTransactions: (overrides?: Partial<TransactionFilters>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<AdminTransaction>;
 };
 
 export type { TransactionFilters };
@@ -83,6 +86,10 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
         params.set('category', category);
       }
 
+      if (nextFilters.includeDeleted) {
+        params.set('includeDeleted', 'true');
+      }
+
       setIsLoading(true);
       setError(null);
 
@@ -94,8 +101,13 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
         setCategories(Array.isArray(payload.categories) ? payload.categories : []);
         setRange(payload.range ?? null);
         setCategoryFilter(payload.categoryFilter ?? null);
-        filtersRef.current = nextFilters;
-        setAppliedFilters(nextFilters);
+        const resolvedIncludeDeleted = payload.includeDeleted ?? nextFilters.includeDeleted;
+        const finalFilters = {
+          ...nextFilters,
+          includeDeleted: resolvedIncludeDeleted
+        };
+        filtersRef.current = finalFilters;
+        setAppliedFilters(finalFilters);
       } catch (fetchError) {
         if (fetchError instanceof UnauthorizedError) {
           setError(fetchError.message);
@@ -127,6 +139,47 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
     }
   }, [authStatus, fetchTransactions, baseFilters]);
 
+  const deleteTransaction = useCallback(
+    async (id: string) => {
+      if (authStatus !== 'authenticated') {
+        const message = 'Sign in to update transactions.';
+        setError(message);
+        throw new Error(message);
+      }
+
+      setError(null);
+
+      const response = await fetchWithAuth(`/admin/transactions/${id}/delete`, {
+        method: 'POST'
+      });
+
+      const payload = (await response.json()) as { transaction: AdminTransaction };
+      const updated = payload.transaction;
+
+      if (!updated) {
+        throw new Error('Transaction update did not return data.');
+      }
+
+      setTransactions((previous) => {
+        if (!filtersRef.current.includeDeleted) {
+          return previous.filter((transaction) => transaction.id !== id);
+        }
+
+        const index = previous.findIndex((transaction) => transaction.id === id);
+        if (index === -1) {
+          return previous;
+        }
+
+        const next = [...previous];
+        next[index] = updated;
+        return next;
+      });
+
+      return updated;
+    },
+    [authStatus, fetchWithAuth]
+  );
+
   return {
     transactions,
     categories,
@@ -135,6 +188,7 @@ export function useAdminTransactions(initial?: Partial<TransactionFilters>): Use
     appliedFilters,
     isLoading,
     error,
-    fetchTransactions
+    fetchTransactions,
+    deleteTransaction
   };
 }

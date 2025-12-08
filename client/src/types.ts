@@ -152,6 +152,12 @@ export type AdminTransaction = {
   notes: string | null;
   totalAmount: number;
   createdAt: string;
+  isDeleted: boolean;
+  deletedAt: string | null;
+  deletedBy: {
+    id: string;
+    username: string;
+  } | null;
   lineItems: TransactionLineItem[];
   categoryBreakdown: TransactionCategoryBreakdownEntry[];
 };
@@ -164,6 +170,7 @@ export type TransactionRange = {
 export type AdminTransactionsResponse = {
   range: TransactionRange;
   categoryFilter: string | null;
+  includeDeleted: boolean;
   categories: string[];
   transactions: AdminTransaction[];
 };

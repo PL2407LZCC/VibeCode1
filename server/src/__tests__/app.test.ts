@@ -20,7 +20,9 @@ const {
     purchase: {
       aggregate: vi.fn(),
       deleteMany: vi.fn(),
-      findMany: vi.fn()
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn()
     },
     purchaseItem: {
       aggregate: vi.fn(),
@@ -150,6 +152,8 @@ describe('API routes', () => {
       { createdAt: new Date('2025-11-22T18:25:00Z'), totalAmount: 30 },
       { createdAt: new Date('2025-11-25T11:05:00Z'), totalAmount: 20 }
     ]);
+    prismaMock.purchase.findUnique.mockResolvedValue(null);
+    prismaMock.purchase.update.mockResolvedValue(null);
     prismaMock.purchase.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.purchaseItem.aggregate.mockResolvedValue({ _sum: { quantity: 320 } });
     prismaMock.purchaseItem.deleteMany.mockResolvedValue({ count: 0 });
@@ -500,6 +504,167 @@ describe('API routes', () => {
     expect(body.hourlyTrend.every((entry: { percentage: number; transactions: number }) => entry.percentage === 0 && entry.transactions === 0)).toBe(true);
     expect(body.categoryMix).toEqual([]);
     expect(body.productPerformance).toEqual([]);
+  });
+
+  it('returns transactions excluding deleted entries by default', async () => {
+    const activeTransaction = {
+      id: 'purchase-active',
+      reference: 'purchase-active',
+      totalAmount: 25,
+      status: 'PAID',
+      notes: null,
+      createdAt: new Date('2025-11-24T10:00:00Z'),
+      isDeleted: false,
+      deletedAt: null,
+      deletedByAdmin: null,
+      items: [
+        {
+          quantity: 1,
+          unitPrice: 25,
+          product: {
+            id: 'demo-coffee',
+            title: 'Coffee',
+            category: 'Beverages'
+          }
+        }
+      ]
+    };
+
+    prismaMock.purchase.findMany.mockResolvedValueOnce([activeTransaction]);
+
+    const response = await request(app)
+      .get('/admin/transactions?start=2025-11-20&end=2025-11-25')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(prismaMock.purchase.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isDeleted: false })
+      })
+    );
+    expect(response.body.includeDeleted).toBe(false);
+    expect(response.body.transactions).toHaveLength(1);
+    expect(response.body.transactions[0]).toMatchObject({
+      id: 'purchase-active',
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null
+    });
+  });
+
+  it('includes deleted transactions when requested', async () => {
+    const deletedTransaction = {
+      id: 'purchase-deleted',
+      reference: 'purchase-deleted',
+      totalAmount: 15,
+      status: 'PAID',
+      notes: null,
+      createdAt: new Date('2025-11-23T08:00:00Z'),
+      isDeleted: true,
+      deletedAt: new Date('2025-11-24T09:00:00Z'),
+      deletedByAdmin: {
+        id: 'admin-123',
+        username: 'moderator'
+      },
+      items: [
+        {
+          quantity: 3,
+          unitPrice: 5,
+          product: {
+            id: 'granola-bar',
+            title: 'Granola Bar',
+            category: 'Snacks'
+          }
+        }
+      ]
+    };
+
+    prismaMock.purchase.findMany.mockResolvedValueOnce([deletedTransaction]);
+
+    const response = await request(app)
+      .get('/admin/transactions?start=2025-11-20&end=2025-11-25&includeDeleted=true')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(prismaMock.purchase.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ isDeleted: false })
+      })
+    );
+    expect(response.body.includeDeleted).toBe(true);
+    expect(response.body.transactions).toHaveLength(1);
+    expect(response.body.transactions[0]).toMatchObject({
+      id: 'purchase-deleted',
+      isDeleted: true,
+      deletedBy: { id: 'admin-123', username: 'moderator' }
+    });
+  });
+
+  it('flags a transaction as deleted and returns the updated summary', async () => {
+    const transactionId = 'purchase-soft-delete';
+    const existingTransaction = {
+      id: transactionId,
+      reference: transactionId,
+      totalAmount: 42,
+      status: 'PAID',
+      notes: null,
+      createdAt: new Date('2025-11-25T08:00:00Z'),
+      isDeleted: false,
+      deletedAt: null,
+      deletedByAdmin: null,
+      items: [
+        {
+          quantity: 2,
+          unitPrice: 21,
+          product: {
+            id: 'demo-coffee',
+            title: 'Coffee',
+            category: 'Beverages'
+          }
+        }
+      ]
+    };
+
+    const updatedTransaction = {
+      ...existingTransaction,
+      isDeleted: true,
+      deletedAt: new Date('2025-11-25T12:00:00Z')
+    };
+
+    prismaMock.purchase.findUnique.mockResolvedValueOnce(existingTransaction);
+    prismaMock.purchase.update.mockResolvedValueOnce(updatedTransaction);
+
+    const response = await request(app)
+      .post(`/admin/transactions/${transactionId}/delete`)
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(prismaMock.purchase.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: transactionId },
+        data: expect.objectContaining({ isDeleted: true })
+      })
+    );
+    expect(response.body.transaction).toMatchObject({
+      id: transactionId,
+      isDeleted: true,
+      totalAmount: 42,
+      lineItems: [
+        {
+          productId: 'demo-coffee',
+          quantity: 2,
+          unitPrice: 21,
+          subtotal: 42
+        }
+      ],
+      categoryBreakdown: [
+        {
+          category: 'Beverages',
+          quantity: 2,
+          revenue: 42
+        }
+      ]
+    });
   });
 
   it('allows admins to upload images and returns file metadata', async () => {

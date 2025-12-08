@@ -41,10 +41,21 @@ type TransactionsPanelProps = {
 };
 
 export function TransactionsPanel({ onError }: TransactionsPanelProps) {
-  const { transactions, categories, range, categoryFilter, appliedFilters, isLoading, error, fetchTransactions } =
+  const {
+    transactions,
+    categories,
+    range,
+    categoryFilter,
+    appliedFilters,
+    isLoading,
+    error,
+    fetchTransactions,
+    deleteTransaction
+  } =
     useAdminTransactions();
   const [formState, setFormState] = useState<TransactionFilters>(appliedFilters);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     setFormState(appliedFilters);
@@ -56,20 +67,25 @@ export function TransactionsPanel({ onError }: TransactionsPanelProps) {
     }
   }, [error, onError]);
 
-  const totalRevenue = useMemo(
-    () => transactions.reduce((sum, transaction) => sum + transaction.totalAmount, 0),
+  const activeTransactions = useMemo(
+    () => transactions.filter((transaction) => !transaction.isDeleted),
     [transactions]
+  );
+
+  const totalRevenue = useMemo(
+    () => activeTransactions.reduce((sum, transaction) => sum + transaction.totalAmount, 0),
+    [activeTransactions]
   );
 
   const totalItemsSold = useMemo(
     () =>
-      transactions.reduce((sum, transaction) => {
+      activeTransactions.reduce((sum, transaction) => {
         return sum + transaction.lineItems.reduce((itemSum, item) => itemSum + item.quantity, 0);
       }, 0),
-    [transactions]
+    [activeTransactions]
   );
 
-  const transactionCount = transactions.length;
+  const transactionCount = activeTransactions.length;
 
   const applyFilters = async (filters: TransactionFilters) => {
     await fetchTransactions(filters);
@@ -112,20 +128,63 @@ export function TransactionsPanel({ onError }: TransactionsPanelProps) {
   };
 
   const effectiveCategory = categoryFilter ?? 'All categories';
+  const filtersIncludeDeleted = formState.includeDeleted;
+
+  const handleDelete = async (transaction: AdminTransaction) => {
+    if (transaction.isDeleted) {
+      return;
+    }
+
+    const confirmed = window.confirm('Mark this transaction as deleted? This will remove it from sales metrics.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setPendingDeleteId(transaction.id);
+      await deleteTransaction(transaction.id);
+    } catch (deleteError) {
+      const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete transaction.';
+      if (onError) {
+        onError(message);
+      }
+      setValidationError(message);
+    } finally {
+      setPendingDeleteId(null);
+    }
+  };
 
   const renderTransaction = (transaction: AdminTransaction) => {
     const createdAt = timestampFormatter.format(new Date(transaction.createdAt));
     const lineItemTotal = transaction.lineItems.reduce((sum, item) => sum + item.quantity, 0);
     const formattedItems = numberFormatter.format(lineItemTotal);
+    const deletedAt = transaction.deletedAt ? timestampFormatter.format(new Date(transaction.deletedAt)) : null;
+    const cardClassName = transaction.isDeleted ? 'transactions-card transactions-card--deleted' : 'transactions-card';
 
     return (
-      <article key={transaction.id} className="transactions-card">
+      <article key={transaction.id} className={cardClassName}>
         <header className="transactions-card__header">
           <div>
             <p className="transactions-card__reference">Reference {transaction.reference ?? 'N/A'}</p>
             <p className="transactions-card__meta">{createdAt} · {formattedItems} items</p>
           </div>
-          <div className="transactions-card__amount">{currencyFormatter.format(transaction.totalAmount)}</div>
+          <div className="transactions-card__header-meta">
+            <div className="transactions-card__amount">{currencyFormatter.format(transaction.totalAmount)}</div>
+            <div className="transactions-card__actions">
+              {transaction.isDeleted ? (
+                <span className="transactions-card__badge">Deleted</span>
+              ) : (
+                <button
+                  type="button"
+                  className="transactions-card__delete"
+                  onClick={() => handleDelete(transaction)}
+                  disabled={pendingDeleteId === transaction.id || isLoading}
+                >
+                  Flag as deleted
+                </button>
+              )}
+            </div>
+          </div>
         </header>
         <dl className="transactions-card__details">
           <div>
@@ -136,6 +195,15 @@ export function TransactionsPanel({ onError }: TransactionsPanelProps) {
             <div>
               <dt>Notes</dt>
               <dd>{transaction.notes}</dd>
+            </div>
+          ) : null}
+          {transaction.isDeleted ? (
+            <div>
+              <dt>Deleted</dt>
+              <dd>
+                {deletedAt ? deletedAt : '—'}
+                {transaction.deletedBy ? ` · ${transaction.deletedBy.username}` : ''}
+              </dd>
             </div>
           ) : null}
         </dl>
@@ -246,6 +314,20 @@ export function TransactionsPanel({ onError }: TransactionsPanelProps) {
               Apply filters
             </button>
           </div>
+          <label className="transactions-filters__option">
+            <input
+              type="checkbox"
+              checked={filtersIncludeDeleted}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  includeDeleted: event.target.checked
+                }))
+              }
+              disabled={isLoading}
+            />
+            <span>Show deleted transactions</span>
+          </label>
         </div>
         {validationError ? <p className="transactions-error">{validationError}</p> : null}
         {error ? <p className="transactions-error">{error}</p> : null}
@@ -277,6 +359,9 @@ export function TransactionsPanel({ onError }: TransactionsPanelProps) {
           <p>{currencyFormatter.format(totalRevenue)}</p>
         </div>
       </section>
+      {filtersIncludeDeleted ? (
+        <p className="transactions-summary__note">Deleted transactions are highlighted below and remain excluded from totals.</p>
+      ) : null}
 
       <section className="transactions-results" aria-live="polite">
         {isLoading && transactions.length === 0 ? (

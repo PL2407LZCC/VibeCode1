@@ -684,14 +684,23 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       hourlyTransactionsRows
     ] = await Promise.all([
       prisma.purchase.aggregate({
+        where: {
+          isDeleted: false
+        },
         _sum: { totalAmount: true },
         _count: { _all: true }
       }),
       prisma.purchaseItem.aggregate({
+        where: {
+          purchase: {
+            isDeleted: false
+          }
+        },
         _sum: { quantity: true }
       }),
       prisma.purchase.findMany({
         where: {
+          isDeleted: false,
           createdAt: {
             gte: historyWindowStart
           }
@@ -702,6 +711,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       prisma.purchaseItem.findMany({
         where: {
           purchase: {
+            isDeleted: false,
             createdAt: {
               gte: lineItemWindowStart
             }
@@ -740,6 +750,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         FROM "purchase_items"
         INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
         WHERE "purchases"."createdAt" >= ${currentDailyStart}
+          AND "purchases"."isDeleted" = false
         GROUP BY "purchase_items"."productId"
       `,
       prisma.$queryRaw<ProductSalesRow[]>`
@@ -747,12 +758,15 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
                SUM("purchase_items"."quantity") AS "quantity",
                SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
         FROM "purchase_items"
+        INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
+        WHERE "purchases"."isDeleted" = false
         GROUP BY "purchase_items"."productId"
       `,
       prisma.$queryRaw<HourlyTransactionsRow[]>`
         SELECT EXTRACT(HOUR FROM timezone('Europe/Helsinki', "purchases"."createdAt" AT TIME ZONE 'UTC'))::int AS "hour",
                COUNT(*)::bigint AS "transactions"
         FROM "purchases"
+        WHERE "purchases"."isDeleted" = false
         GROUP BY 1
         ORDER BY 1
       `
@@ -1113,25 +1127,42 @@ type AdminTransactionsQuery = {
   start?: string;
   end?: string;
   category?: string;
+  includeDeleted?: string;
 };
 
-type TransactionRow = {
-  id: string;
-  reference: string;
-  totalAmount: Prisma.Decimal;
-  status: string;
-  notes: string | null;
-  createdAt: Date;
-  items: Array<{
-    quantity: number;
-    unitPrice: Prisma.Decimal;
-    product: {
-      id: string;
-      title: string;
-      category: string;
-    };
-  }>;
-};
+const transactionDetailsSelect = {
+  id: true,
+  reference: true,
+  totalAmount: true,
+  status: true,
+  notes: true,
+  createdAt: true,
+  isDeleted: true,
+  deletedAt: true,
+  deletedByAdmin: {
+    select: {
+      id: true,
+      username: true
+    }
+  },
+  items: {
+    select: {
+      quantity: true,
+      unitPrice: true,
+      product: {
+        select: {
+          id: true,
+          title: true,
+          category: true
+        }
+      }
+    }
+  }
+} as const;
+
+type TransactionRow = Prisma.PurchaseGetPayload<{
+  select: typeof transactionDetailsSelect;
+}>;
 
 const MAX_TRANSACTION_WINDOW_DAYS = 90;
 
@@ -1181,12 +1212,16 @@ const parseTransactionQuery = (query: AdminTransactionsQuery) => {
   }
 
   const category = normalizeCategory(query.category);
+  const includeDeleted = typeof query.includeDeleted === 'string'
+    ? ['true', '1', 'yes'].includes(query.includeDeleted.trim().toLowerCase())
+    : false;
 
   return {
     data: {
       start: startDate,
       end: endDate,
-      categoryFilter: category === 'Uncategorized' && !query.category ? null : category
+      categoryFilter: category === 'Uncategorized' && !query.category ? null : category,
+      includeDeleted
     }
   } as const;
 };
@@ -1221,6 +1256,14 @@ const toTransactionSummary = (rows: TransactionRow[]) => {
       notes: transaction.notes ?? null,
       totalAmount: Number(totalAmount.toFixed(2)),
       createdAt: transaction.createdAt.toISOString(),
+      isDeleted: transaction.isDeleted,
+      deletedAt: transaction.deletedAt ? transaction.deletedAt.toISOString() : null,
+      deletedBy: transaction.deletedByAdmin
+        ? {
+            id: transaction.deletedByAdmin.id,
+            username: transaction.deletedByAdmin.username
+          }
+        : null,
       lineItems,
       categoryBreakdown: Object.entries(categoryBreakdown)
         .map(([category, totals]) => ({
@@ -1233,17 +1276,66 @@ const toTransactionSummary = (rows: TransactionRow[]) => {
   });
 };
 
+adminRouter.post('/transactions/:id/delete', async (req: Request<{ id: string }>, res: Response) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ message: 'Transaction id is required.' });
+  }
+
+  try {
+    const existing = await prisma.purchase.findUnique({
+      where: { id },
+      select: transactionDetailsSelect
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: `Transaction ${id} not found.` });
+    }
+
+    let mutated = existing;
+
+    if (!existing.isDeleted) {
+      const adminId = req.admin?.id && req.admin.id !== 'legacy-admin' ? req.admin.id : null;
+
+      mutated = await prisma.purchase.update({
+        where: { id },
+        data: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          ...(adminId
+            ? {
+                deletedByAdmin: {
+                  connect: { id: adminId }
+                }
+              }
+            : {})
+        },
+        select: transactionDetailsSelect
+      });
+    }
+
+    const [summary] = toTransactionSummary([mutated]);
+
+    return res.json({ transaction: summary });
+  } catch (error) {
+    console.error('Failed to mark transaction as deleted', error);
+    return res.status(500).json({ message: 'Unable to mark transaction as deleted.' });
+  }
+});
+
 adminRouter.get('/transactions', async (req: Request<unknown, unknown, unknown, AdminTransactionsQuery>, res: Response) => {
   const validation = parseTransactionQuery(req.query);
   if ('error' in validation) {
     return res.status(400).json({ message: validation.error });
   }
 
-  const { start, end, categoryFilter } = validation.data;
+  const { start, end, categoryFilter, includeDeleted } = validation.data;
 
   try {
     const transactions = await prisma.purchase.findMany({
       where: {
+        ...(includeDeleted ? {} : { isDeleted: false }),
         createdAt: {
           gte: start,
           lt: end
@@ -1264,27 +1356,7 @@ adminRouter.get('/transactions', async (req: Request<unknown, unknown, unknown, 
           : {})
       },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        reference: true,
-        totalAmount: true,
-        status: true,
-        notes: true,
-        createdAt: true,
-        items: {
-          select: {
-            quantity: true,
-            unitPrice: true,
-            product: {
-              select: {
-                id: true,
-                title: true,
-                category: true
-              }
-            }
-          }
-        }
-      }
+      select: transactionDetailsSelect
     });
 
     const categories = (await prisma.product.findMany({
@@ -1303,6 +1375,7 @@ adminRouter.get('/transactions', async (req: Request<unknown, unknown, unknown, 
         end: addDaysUtc(end, -1).toISOString().slice(0, 10)
       },
       categoryFilter: categoryFilter ?? null,
+      includeDeleted,
       categories,
       transactions: toTransactionSummary(transactions as TransactionRow[])
     });
