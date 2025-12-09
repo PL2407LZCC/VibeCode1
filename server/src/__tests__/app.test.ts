@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   listActiveProductsMock,
@@ -14,7 +14,14 @@ const {
   archiveProductMock,
   getKioskConfigMock,
   setInventoryEnabledMock,
-  prismaMock
+  prismaMock,
+  listAdminDirectoryMock,
+  issueAdminInviteMock,
+  resendAdminInviteMock,
+  revokeAdminInviteMock,
+  updateAdminActivationMock,
+  previewAdminInviteMock,
+  acceptAdminInviteMock
 } = vi.hoisted(() => {
   const prisma = {
     purchase: {
@@ -45,7 +52,14 @@ const {
     archiveProductMock: vi.fn(),
     getKioskConfigMock: vi.fn(),
     setInventoryEnabledMock: vi.fn(),
-    prismaMock: prisma
+    prismaMock: prisma,
+    listAdminDirectoryMock: vi.fn(),
+    issueAdminInviteMock: vi.fn(),
+    resendAdminInviteMock: vi.fn(),
+    revokeAdminInviteMock: vi.fn(),
+    updateAdminActivationMock: vi.fn(),
+    previewAdminInviteMock: vi.fn(),
+    acceptAdminInviteMock: vi.fn()
   };
 });
 
@@ -68,6 +82,20 @@ vi.mock('../lib/prisma', () => ({
   default: prismaMock
 }));
 
+vi.mock('../services/adminInviteService', async () => {
+  const actual = await vi.importActual<typeof import('../services/adminInviteService')>('../services/adminInviteService');
+  return {
+    ...actual,
+    listAdminDirectory: listAdminDirectoryMock,
+    issueAdminInvite: issueAdminInviteMock,
+    resendAdminInvite: resendAdminInviteMock,
+    revokeAdminInvite: revokeAdminInviteMock,
+    updateAdminActivation: updateAdminActivationMock,
+    previewAdminInvite: previewAdminInviteMock,
+    acceptAdminInvite: acceptAdminInviteMock
+  };
+});
+
 type ServerModule = typeof import('../index');
 
 const FIXED_NOW = new Date('2025-11-25T12:00:00Z');
@@ -75,6 +103,8 @@ const FIXED_NOW = new Date('2025-11-25T12:00:00Z');
 let app!: ServerModule['app'];
 let resetState!: ServerModule['resetState'];
 let uploadsDirAbsolute!: string;
+let AdminDirectoryError!: typeof import('../services/adminInviteService').AdminDirectoryError;
+let AdminInviteAcceptanceError!: typeof import('../services/adminInviteService').AdminInviteAcceptanceError;
 
 const validPayload = {
   items: [
@@ -84,6 +114,14 @@ const validPayload = {
     }
   ]
 };
+
+let adminDirectoryResponse: any;
+let issuedInviteResponse: any;
+let resendInviteResponse: any;
+let revokedInviteResponse: any;
+let updatedAdminActivationResponse: any;
+let invitePreviewResponse: any;
+let inviteAcceptanceResponse: any;
 
 describe('API routes', () => {
   beforeAll(async () => {
@@ -97,6 +135,10 @@ describe('API routes', () => {
     const serverModule: ServerModule = await import('../index');
     app = serverModule.app;
     resetState = serverModule.resetState;
+
+    const serviceModule = await import('../services/adminInviteService');
+    AdminDirectoryError = serviceModule.AdminDirectoryError;
+    AdminInviteAcceptanceError = serviceModule.AdminInviteAcceptanceError;
   });
 
   beforeEach(async () => {
@@ -142,6 +184,148 @@ describe('API routes', () => {
 
     getKioskConfigMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: true });
     setInventoryEnabledMock.mockResolvedValue({ currency: 'EUR', paymentProvider: 'mobilepay', inventoryEnabled: false });
+
+    adminDirectoryResponse = {
+      admins: [
+        {
+          id: 'legacy-admin',
+          email: 'legacy-admin@localhost',
+          username: 'legacy-admin',
+          isActive: true,
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          lastLoginAt: null
+        }
+      ],
+      invites: [
+        {
+          id: 'invite-1',
+          email: 'new-admin@example.com',
+          username: 'newadmin',
+          status: 'pending',
+          createdAt: new Date('2025-11-26T12:00:00Z').toISOString(),
+          updatedAt: new Date('2025-11-26T12:00:00Z').toISOString(),
+          expiresAt: new Date('2025-12-03T12:00:00Z').toISOString(),
+          lastSentAt: new Date('2025-11-26T12:00:00Z').toISOString(),
+          acceptedAt: null,
+          revokedAt: null,
+          invitedBy: {
+            id: 'legacy-admin',
+            username: 'legacy-admin'
+          }
+        }
+      ]
+    };
+    listAdminDirectoryMock.mockResolvedValue(adminDirectoryResponse);
+
+    issuedInviteResponse = {
+      invite: {
+        id: 'invite-2',
+        email: 'fresh-admin@example.com',
+        username: 'freshadmin',
+        status: 'sent',
+        createdAt: new Date('2025-11-27T12:00:00Z').toISOString(),
+        updatedAt: new Date('2025-11-27T12:00:00Z').toISOString(),
+        expiresAt: new Date('2025-12-04T12:00:00Z').toISOString(),
+        lastSentAt: new Date('2025-11-27T12:00:00Z').toISOString(),
+        acceptedAt: null,
+        revokedAt: null,
+        invitedBy: {
+          id: 'legacy-admin',
+          username: 'legacy-admin'
+        }
+      },
+      token: 'debug-token-123',
+      expiresAt: new Date('2025-12-04T12:00:00Z')
+    };
+    issueAdminInviteMock.mockResolvedValue(issuedInviteResponse);
+
+    resendInviteResponse = {
+      invite: {
+        id: 'invite-1',
+        email: 'new-admin@example.com',
+        username: 'newadmin',
+        status: 'sent',
+        createdAt: new Date('2025-11-26T12:00:00Z').toISOString(),
+        updatedAt: new Date('2025-11-27T12:30:00Z').toISOString(),
+        expiresAt: new Date('2025-12-03T12:00:00Z').toISOString(),
+        lastSentAt: new Date('2025-11-27T12:30:00Z').toISOString(),
+        acceptedAt: null,
+        revokedAt: null,
+        invitedBy: {
+          id: 'legacy-admin',
+          username: 'legacy-admin'
+        }
+      },
+      token: 'debug-token-456',
+      expiresAt: new Date('2025-12-03T12:00:00Z')
+    };
+    resendAdminInviteMock.mockResolvedValue(resendInviteResponse);
+
+    revokedInviteResponse = {
+      id: 'invite-1',
+      email: 'new-admin@example.com',
+      username: 'newadmin',
+      status: 'revoked',
+      createdAt: new Date('2025-11-26T12:00:00Z').toISOString(),
+      updatedAt: new Date('2025-11-27T13:00:00Z').toISOString(),
+      expiresAt: null,
+      lastSentAt: new Date('2025-11-27T12:30:00Z').toISOString(),
+      acceptedAt: null,
+      revokedAt: new Date('2025-11-27T13:00:00Z').toISOString(),
+      invitedBy: {
+        id: 'legacy-admin',
+        username: 'legacy-admin'
+      }
+    };
+    revokeAdminInviteMock.mockResolvedValue(revokedInviteResponse);
+
+    updatedAdminActivationResponse = {
+      id: 'admin-2',
+      email: 'other@example.com',
+      username: 'other',
+      isActive: false,
+      createdAt: new Date('2025-09-01T08:00:00Z').toISOString(),
+      updatedAt: new Date('2025-11-27T14:00:00Z').toISOString(),
+      lastLoginAt: null
+    };
+    updateAdminActivationMock.mockResolvedValue(updatedAdminActivationResponse);
+
+    invitePreviewResponse = {
+      invite: adminDirectoryResponse.invites[0],
+      canAccept: true,
+      reason: null
+    };
+    previewAdminInviteMock.mockResolvedValue(invitePreviewResponse);
+
+    inviteAcceptanceResponse = {
+      admin: {
+        id: 'fresh-admin',
+        email: 'fresh-admin@example.com',
+        username: 'freshadmin',
+        isActive: true,
+        createdAt: new Date('2025-11-27T12:35:00Z').toISOString(),
+        updatedAt: new Date('2025-11-27T12:35:00Z').toISOString(),
+        lastLoginAt: null
+      },
+      invite: {
+        id: 'invite-2',
+        email: 'fresh-admin@example.com',
+        username: 'freshadmin',
+        status: 'accepted',
+        createdAt: new Date('2025-11-27T12:00:00Z').toISOString(),
+        updatedAt: new Date('2025-11-27T12:35:00Z').toISOString(),
+        expiresAt: new Date('2025-12-04T12:00:00Z').toISOString(),
+        lastSentAt: new Date('2025-11-27T12:00:00Z').toISOString(),
+        acceptedAt: new Date('2025-11-27T12:35:00Z').toISOString(),
+        revokedAt: null,
+        invitedBy: {
+          id: 'legacy-admin',
+          username: 'legacy-admin'
+        }
+      }
+    };
+    acceptAdminInviteMock.mockResolvedValue(inviteAcceptanceResponse);
 
     prismaMock.purchase.aggregate.mockResolvedValue({ _sum: { totalAmount: 1000 }, _count: { _all: 120 } });
     prismaMock.purchase.findMany.mockResolvedValue([
@@ -235,6 +419,16 @@ describe('API routes', () => {
     process.env.ADMIN_API_KEY = 'test-secret';
 
     await resetState();
+  });
+
+  afterEach(() => {
+    listAdminDirectoryMock.mockReset();
+    issueAdminInviteMock.mockReset();
+    resendAdminInviteMock.mockReset();
+    revokeAdminInviteMock.mockReset();
+    updateAdminActivationMock.mockReset();
+    previewAdminInviteMock.mockReset();
+    acceptAdminInviteMock.mockReset();
   });
 
   afterAll(() => {
@@ -331,6 +525,162 @@ describe('API routes', () => {
 
     expect(response.status).toBe(200);
     expect(listAllProductsMock).toHaveBeenCalled();
+  });
+
+  it('previews an invite token for onboarding', async () => {
+    const response = await request(app)
+      .post('/auth/invite/preview')
+      .send({ token: 'sample-token' });
+
+    expect(response.status).toBe(200);
+    expect(previewAdminInviteMock).toHaveBeenCalledWith('sample-token');
+    expect(response.body).toEqual(invitePreviewResponse);
+  });
+
+  it('validates invite preview payloads', async () => {
+    const response = await request(app).post('/auth/invite/preview').send({ token: '' });
+
+    expect(response.status).toBe(400);
+    expect(previewAdminInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces invite preview errors', async () => {
+    previewAdminInviteMock.mockRejectedValueOnce(new AdminInviteAcceptanceError('Invite not found.', 404));
+
+    const response = await request(app)
+      .post('/auth/invite/preview')
+      .send({ token: 'missing-token' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.message).toContain('Invite not found');
+  });
+
+  it('accepts an invite and signs in the new admin', async () => {
+    const response = await request(app)
+      .post('/auth/invite/accept')
+      .send({ token: 'sample-token', password: 'StrongPassword123!' });
+
+    expect(response.status).toBe(201);
+    expect(acceptAdminInviteMock).toHaveBeenCalledWith({ token: 'sample-token', password: 'StrongPassword123!' });
+    expect(response.body.admin).toEqual(inviteAcceptanceResponse.admin);
+    expect(response.body.invite).toEqual(inviteAcceptanceResponse.invite);
+    const setCookieHeader = response.headers['set-cookie'] ?? [];
+    expect(Array.isArray(setCookieHeader)).toBe(true);
+    expect(setCookieHeader.join(';')).toContain('admin_session');
+  });
+
+  it('propagates invite acceptance errors', async () => {
+    acceptAdminInviteMock.mockRejectedValueOnce(new AdminInviteAcceptanceError('Invite expired.', 410));
+
+    const response = await request(app)
+      .post('/auth/invite/accept')
+      .send({ token: 'sample-token', password: 'StrongPassword123!' });
+
+    expect(response.status).toBe(410);
+    expect(response.body.message).toContain('Invite expired');
+  });
+
+  it('lists admins and invites for the management panel', async () => {
+    const response = await request(app)
+      .get('/admin/users')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(listAdminDirectoryMock).toHaveBeenCalled();
+    expect(response.body).toEqual(adminDirectoryResponse);
+  });
+
+  it('issues a new admin invite and returns debug details outside production', async () => {
+    const response = await request(app)
+      .post('/admin/users/invite')
+      .set('x-admin-token', 'test-secret')
+      .send({ email: 'fresh-admin@example.com', username: 'freshadmin' });
+
+    expect(response.status).toBe(201);
+    expect(issueAdminInviteMock).toHaveBeenCalledWith({
+      email: 'fresh-admin@example.com',
+      username: 'freshadmin',
+      invitedByAdminId: 'legacy-admin'
+    });
+    expect(response.body.invite).toEqual(issuedInviteResponse.invite);
+    expect(response.body.debugToken).toBe('debug-token-123');
+    expect(response.body.expiresAt).toBe(issuedInviteResponse.expiresAt.toISOString());
+  });
+
+  it('surfaces invite conflicts from the service', async () => {
+    issueAdminInviteMock.mockRejectedValueOnce(new AdminDirectoryError('An admin with that email already exists.', 409));
+
+    const response = await request(app)
+      .post('/admin/users/invite')
+      .set('x-admin-token', 'test-secret')
+      .send({ email: 'fresh-admin@example.com', username: 'freshadmin' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain('already exists');
+  });
+
+  it('resends an admin invite', async () => {
+    const response = await request(app)
+      .post('/admin/users/invites/invite-1/resend')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(200);
+    expect(resendAdminInviteMock).toHaveBeenCalledWith('invite-1', 'legacy-admin');
+    expect(response.body.invite).toEqual(resendInviteResponse.invite);
+    expect(response.body.debugToken).toBe('debug-token-456');
+    expect(response.body.expiresAt).toBe(resendInviteResponse.expiresAt.toISOString());
+  });
+
+  it('propagates resend errors gracefully', async () => {
+    resendAdminInviteMock.mockRejectedValueOnce(new AdminDirectoryError('Invite not found.', 404));
+
+    const response = await request(app)
+      .post('/admin/users/invites/missing/resend')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(404);
+    expect(response.body.message).toContain('Invite not found');
+  });
+
+  it('revokes an admin invite', async () => {
+    const response = await request(app)
+      .delete('/admin/users/invites/invite-1')
+      .set('x-admin-token', 'test-secret');
+
+    expect(response.status).toBe(204);
+    expect(revokeAdminInviteMock).toHaveBeenCalledWith('invite-1');
+  });
+
+  it('updates admin activation status', async () => {
+    const response = await request(app)
+      .patch('/admin/users/admin-2')
+      .set('x-admin-token', 'test-secret')
+      .send({ isActive: false });
+
+    expect(response.status).toBe(200);
+    expect(updateAdminActivationMock).toHaveBeenCalledWith('admin-2', false, 'legacy-admin');
+    expect(response.body.admin).toEqual(updatedAdminActivationResponse);
+  });
+
+  it('rejects invalid payloads when updating admin activation', async () => {
+    const response = await request(app)
+      .patch('/admin/users/admin-2')
+      .set('x-admin-token', 'test-secret')
+      .send({ isActive: 'no' });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('propagates activation errors from the service', async () => {
+    updateAdminActivationMock.mockRejectedValueOnce(new AdminDirectoryError('Admin not found.', 404));
+
+    const response = await request(app)
+      .patch('/admin/users/missing')
+      .set('x-admin-token', 'test-secret')
+      .send({ isActive: true });
+
+    expect(response.status).toBe(404);
+    expect(response.body.message).toContain('Admin not found');
   });
 
   it('archives a product via admin endpoint', async () => {

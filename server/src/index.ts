@@ -1,6 +1,6 @@
 import express, { type Request, type Response } from 'express';
 import { Prisma } from '@prisma/client';
-import multer, { MulterError } from 'multer';
+import multer, { MulterError, type FileFilterCallback } from 'multer';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import requireAdmin from './middleware/requireAdmin';
@@ -39,6 +39,17 @@ import {
 } from './services/adminAuthService';
 import { sendPasswordResetEmail } from './services/adminEmailService';
 import {
+  listAdminDirectory,
+  issueAdminInvite,
+  resendAdminInvite,
+  revokeAdminInvite,
+  updateAdminActivation,
+  previewAdminInvite,
+  acceptAdminInvite,
+  AdminDirectoryError,
+  AdminInviteAcceptanceError
+} from './services/adminInviteService';
+import {
   findAdminUserById,
   toPublicAdminUser
 } from './repositories/adminUserRepository';
@@ -51,6 +62,7 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:51
   .filter(Boolean);
 const shouldAutoSeed = (process.env.AUTO_SEED ?? 'true').toLowerCase() !== 'false';
 const secureCookies = env.NODE_ENV === 'production';
+const includeDebugTokens = env.NODE_ENV !== 'production';
 
 const setAdminSessionCookie = (res: Response, token: string, maxAgeMs: number) => {
   res.cookie(ADMIN_SESSION_COOKIE, token, {
@@ -148,12 +160,12 @@ type UploadMiddlewareError = Error & { code?: string };
 
 const imageUpload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
+    destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
       ensureUploadsDir()
         .then(() => cb(null, UPLOADS_DIR))
         .catch((error) => cb(error as Error, UPLOADS_DIR));
     },
-    filename: (_req, file, cb) => {
+    filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
       try {
         const filename = createUploadFilename(file.mimetype, file.originalname);
         cb(null, filename);
@@ -165,7 +177,7 @@ const imageUpload = multer({
   limits: {
     fileSize: MAX_UPLOAD_SIZE_BYTES
   },
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
       const error: UploadMiddlewareError = new Error('Only JPEG, PNG, or WebP images are allowed.');
       error.code = 'UNSUPPORTED_FILE_TYPE';
@@ -362,6 +374,153 @@ app.post('/auth/password-reset/confirm', async (req: Request, res: Response) => 
   } catch (error) {
     console.error('Failed to confirm password reset', error);
     return res.status(500).json({ message: 'Unable to complete password reset.' });
+  }
+});
+
+app.post('/auth/invite/preview', async (req: Request, res: Response) => {
+  const { token } = req.body as { token?: unknown };
+
+  if (typeof token !== 'string' || token.trim().length === 0) {
+    return res.status(400).json({ message: 'Invite token is required.' });
+  }
+
+  try {
+    const preview = await previewAdminInvite(token);
+    return res.json(preview);
+  } catch (error) {
+    if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to preview admin invite', error);
+    return res.status(500).json({ message: 'Unable to preview invite.' });
+  }
+});
+
+app.post('/auth/invite/accept', async (req: Request, res: Response) => {
+  const { token, password } = req.body as { token?: unknown; password?: unknown };
+
+  if (typeof token !== 'string' || token.trim().length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Invite token and password are required.' });
+  }
+
+  try {
+    const result = await acceptAdminInvite({ token, password });
+    const session = createAdminSessionToken(result.admin);
+    setAdminSessionCookie(res, session.token, session.maxAgeMs);
+
+    return res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to accept admin invite', error);
+    return res.status(500).json({ message: 'Unable to activate admin account.' });
+  }
+});
+
+app.get('/admin/users', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const directory = await listAdminDirectory();
+    return res.json(directory);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to load admin directory', error);
+    return res.status(500).json({ message: 'Unable to load admin directory.' });
+  }
+});
+
+app.post('/admin/users/invite', requireAdmin, async (req: Request, res: Response) => {
+  const { email, username } = req.body as { email?: unknown; username?: unknown };
+
+  if (typeof email !== 'string' || typeof username !== 'string') {
+    return res.status(400).json({ message: 'Email and username are required.' });
+  }
+
+  try {
+    const result = await issueAdminInvite({
+      email,
+      username,
+      invitedByAdminId: req.admin?.id
+    });
+
+    const responseBody: Record<string, unknown> = {
+      invite: result.invite
+    };
+
+    if (includeDebugTokens) {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt ? result.expiresAt.toISOString() : null;
+    }
+
+    return res.status(201).json(responseBody);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to issue admin invite', error);
+    return res.status(500).json({ message: 'Unable to send invite.' });
+  }
+});
+
+app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request, res: Response) => {
+  const inviteId = req.params.id;
+
+  try {
+    const result = await resendAdminInvite(inviteId, req.admin?.id);
+
+    const responseBody: Record<string, unknown> = {
+      invite: result.invite
+    };
+
+    if (includeDebugTokens) {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt ? result.expiresAt.toISOString() : null;
+    }
+
+    return res.json(responseBody);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to resend admin invite', error);
+    return res.status(500).json({ message: 'Unable to resend invite.' });
+  }
+});
+
+app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request, res: Response) => {
+  const inviteId = req.params.id;
+
+  try {
+    await revokeAdminInvite(inviteId);
+    return res.status(204).send();
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to revoke admin invite', error);
+    return res.status(500).json({ message: 'Unable to revoke invite.' });
+  }
+});
+
+app.patch('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { isActive } = req.body as { isActive?: unknown };
+
+  if (typeof isActive !== 'boolean') {
+    return res.status(400).json({ message: 'isActive must be a boolean.' });
+  }
+
+  try {
+    const admin = await updateAdminActivation(id, isActive, req.admin?.id);
+    return res.json({ admin });
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to update admin status', error);
+    return res.status(500).json({ message: 'Unable to update admin account.' });
   }
 });
 

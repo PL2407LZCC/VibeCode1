@@ -14,6 +14,14 @@ enum PurchaseStatus {
   CANCELLED
 }
 
+enum AdminInviteStatus {
+  PENDING
+  SENT
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
 model Product {
   id             String                @id @default(cuid())
   createdAt      DateTime              @default(now())
@@ -98,6 +106,7 @@ model AdminUser {
   failedLoginAttempts Int                  @default(0)
   resetTokens        PasswordResetToken[]
   deletedPurchases   Purchase[]            @relation("PurchaseDeletedBy")
+  invitesSent        AdminInvite[]         @relation("AdminInvitesCreated")
 
   @@map("admin_users")
 }
@@ -112,4 +121,24 @@ model PasswordResetToken {
   adminUserId  String
 
   @@map("password_reset_tokens")
+}
+
+model AdminInvite {
+  id               String             @id @default(cuid())
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  email            String
+  username         String
+  tokenHash        String             @unique
+  status           AdminInviteStatus  @default(PENDING)
+  expiresAt        DateTime?
+  lastSentAt       DateTime?
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  invitedByAdmin   AdminUser?         @relation("AdminInvitesCreated", fields: [invitedByAdminId], references: [id])
+  invitedByAdminId String?
+
+  @@map("admin_invites")
+  @@index([email])
+  @@index([status])
 }

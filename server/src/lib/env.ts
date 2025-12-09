@@ -30,7 +30,9 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   ADMIN_APP_URL: z.string().default('http://localhost:5173/admin'),
-  ADMIN_RESET_URL: z.string().optional()
+  ADMIN_RESET_URL: z.string().optional(),
+  ADMIN_INVITE_URL: z.string().optional(),
+  ADMIN_INVITE_TOKEN_TTL_MINUTES: z.coerce.number().optional()
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -44,14 +46,17 @@ const {
   ADMIN_SESSION_TTL_HOURS,
   ADMIN_SESSION_REMEMBER_DAYS,
   PASSWORD_RESET_TOKEN_TTL_MINUTES,
+  ADMIN_INVITE_TOKEN_TTL_MINUTES,
   SMTP_SECURE,
   ADMIN_RESET_URL,
+  ADMIN_INVITE_URL,
   ...rest
 } = parsed.data;
 
 const sessionTtlHours = ADMIN_SESSION_TTL_HOURS ?? 12;
 const rememberDays = ADMIN_SESSION_REMEMBER_DAYS ?? 30;
 const resetTokenTtlMinutes = PASSWORD_RESET_TOKEN_TTL_MINUTES ?? 30;
+const inviteTokenTtlMinutes = ADMIN_INVITE_TOKEN_TTL_MINUTES ?? (7 * 24 * 60);
 
 export const env = {
   ...rest,
@@ -59,7 +64,9 @@ export const env = {
   ADMIN_SESSION_REMEMBER_MS: rememberDays * 24 * 60 * 60 * 1000,
   PASSWORD_RESET_TOKEN_TTL_MS: resetTokenTtlMinutes * 60 * 1000,
   SMTP_SECURE: SMTP_SECURE ?? true,
-  ADMIN_RESET_URL: ADMIN_RESET_URL ?? `${rest.ADMIN_APP_URL.replace(/\/$/, '')}/reset`
+  ADMIN_RESET_URL: ADMIN_RESET_URL ?? `${rest.ADMIN_APP_URL.replace(/\/$/, '')}/reset`,
+  ADMIN_INVITE_URL: ADMIN_INVITE_URL ?? `${rest.ADMIN_APP_URL.replace(/\/$/, '')}/invite`,
+  ADMIN_INVITE_TOKEN_TTL_MS: inviteTokenTtlMinutes * 60 * 1000
 };
 
 export type Env = typeof env;

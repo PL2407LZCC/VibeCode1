@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
+import { AdminManagementPanel } from './AdminManagementPanel';
 import type { AdminProduct } from '../types';
 import { SalesOverview } from './SalesOverview';
 import { TransactionsPanel } from './TransactionsPanel';
@@ -66,6 +67,7 @@ const CREATE_FIELD_IDS = {
 } as const;
 
 const COLLAPSIBLE_SECTION_IDS = {
+  adminManagement: 'admin-section-management',
   create: 'admin-section-create',
   catalog: 'admin-section-catalog',
   sales: 'admin-section-sales',
@@ -92,13 +94,20 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
+    adminManagement: false,
     create: false,
     catalog: false,
     sales: false,
     transactions: false
   });
 
-  const { create: isCreateOpen, catalog: isCatalogOpen, sales: isSalesOpen, transactions: isTransactionsOpen } = expandedSections;
+  const {
+    adminManagement: isAdminManagementOpen,
+    create: isCreateOpen,
+    catalog: isCatalogOpen,
+    sales: isSalesOpen,
+    transactions: isTransactionsOpen
+  } = expandedSections;
 
   const lastRefreshToken = useRef<number | undefined>(refreshToken);
 
@@ -231,6 +240,31 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
       {status && !error && <div className={`admin-banner admin-banner--${status.kind}`}>{status.text}</div>}
 
       <div className="admin-dashboard__grid">
+        <section className="admin-card admin-card--wide">
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('adminManagement')}
+            aria-expanded={isAdminManagementOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.adminManagement}
+          >
+            <span
+              className={`admin-card__summary-icon${isAdminManagementOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
+              <h2>Admin Management</h2>
+              <p className="admin-card__subtitle">Invite new admins and adjust access in one place.</p>
+            </div>
+          </button>
+
+          {isAdminManagementOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.adminManagement} className="admin-card__content">
+              <AdminManagementPanel onStatus={handleStatus} />
+            </div>
+          ) : null}
+        </section>
+
         <section className="admin-card admin-card--wide">
           <button
             type="button"

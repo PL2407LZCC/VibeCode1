@@ -3,8 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminDashboard } from './AdminDashboard';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
+import { useAdminManagement } from '../hooks/useAdminManagement';
 
 vi.mock('../hooks/useAdminDashboard');
+vi.mock('../hooks/useAdminManagement');
 
 const baseProduct = {
   id: 'demo-coffee',
@@ -91,7 +93,59 @@ const createDashboardState = (overrides: Partial<DashboardStateShape> = {}): Das
   ...overrides
 });
 
+const baseAdminUser = {
+  id: 'admin-1',
+  email: 'ops@example.com',
+  username: 'ops',
+  isActive: true,
+  lastLoginAt: '2025-11-26T12:00:00.000Z',
+  createdAt: '2025-09-01T08:00:00.000Z',
+  updatedAt: '2025-11-26T12:00:00.000Z'
+};
+
+const baseInvite = {
+  id: 'invite-1',
+  email: 'new-admin@example.com',
+  username: 'newadmin',
+  status: 'pending' as const,
+  createdAt: '2025-11-26T12:00:00.000Z',
+  expiresAt: '2025-12-03T12:00:00.000Z',
+  lastSentAt: '2025-11-26T12:00:00.000Z',
+  acceptedAt: null,
+  revokedAt: null,
+  invitedBy: {
+    id: 'admin-1',
+    username: 'ops'
+  }
+};
+
+type ManagementStateShape = {
+  admins: typeof baseAdminUser[];
+  invites: typeof baseInvite[];
+  isLoading: boolean;
+  error: string | null;
+  refresh: vi.Mock<Promise<void>, []>;
+  inviteAdmin: vi.Mock<Promise<{ invite: typeof baseInvite; debugToken?: string; expiresAt?: string | null }>, [any]>;
+  resendInvite: vi.Mock<Promise<{ invite?: typeof baseInvite; debugToken?: string; expiresAt?: string | null }>, [string]>;
+  revokeInvite: vi.Mock<Promise<void>, [string]>;
+  updateAdminStatus: vi.Mock<Promise<typeof baseAdminUser>, [string, boolean]>;
+};
+
+const createManagementState = (overrides: Partial<ManagementStateShape> = {}): ManagementStateShape => ({
+  admins: [baseAdminUser],
+  invites: [baseInvite],
+  isLoading: false,
+  error: null,
+  refresh: vi.fn().mockResolvedValue(undefined),
+  inviteAdmin: vi.fn().mockResolvedValue({ invite: baseInvite }),
+  resendInvite: vi.fn().mockResolvedValue({ invite: baseInvite }),
+  revokeInvite: vi.fn().mockResolvedValue(undefined),
+  updateAdminStatus: vi.fn().mockResolvedValue({ ...baseAdminUser, isActive: false }),
+  ...overrides
+});
+
 const useAdminDashboardMock = useAdminDashboard as unknown as vi.Mock;
+const useAdminManagementMock = useAdminManagement as unknown as vi.Mock;
 
 const expandSection = async (name: RegExp | string) => {
   const toggle = await screen.findByRole('button', { name });
@@ -101,10 +155,12 @@ const expandSection = async (name: RegExp | string) => {
 describe('AdminDashboard', () => {
   beforeEach(() => {
     useAdminDashboardMock.mockReturnValue(createDashboardState());
+    useAdminManagementMock.mockReturnValue(createManagementState());
   });
 
   afterEach(() => {
     useAdminDashboardMock.mockReset();
+    useAdminManagementMock.mockReset();
     vi.restoreAllMocks();
   });
 
@@ -216,6 +272,40 @@ describe('AdminDashboard', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/upload failed/i)).toBeTruthy();
+    });
+  });
+
+  it('renders admin management data when section is expanded', async () => {
+    render(<AdminDashboard />);
+
+    await expandSection(/admin management/i);
+
+    expect(await screen.findByText(baseAdminUser.email)).toBeTruthy();
+    expect(screen.getByText(/pending invites/i)).toBeTruthy();
+    expect(screen.getByText(baseInvite.email)).toBeTruthy();
+  });
+
+  it('submits a new admin invite through the panel', async () => {
+    const managementState = createManagementState();
+    useAdminManagementMock.mockReturnValue(managementState);
+
+    render(<AdminDashboard />);
+
+    await expandSection(/admin management/i);
+
+    await userEvent.clear(screen.getByLabelText(/Email address/i));
+    await userEvent.type(screen.getByLabelText(/Email address/i), 'fresh-admin@example.com');
+    await userEvent.clear(screen.getByLabelText(/Username/i));
+    await userEvent.type(screen.getByLabelText(/Username/i), 'freshadmin');
+
+    await userEvent.click(screen.getByRole('button', { name: /send invite/i }));
+
+    await waitFor(() => {
+      expect(managementState.inviteAdmin).toHaveBeenCalledWith({ email: 'fresh-admin@example.com', username: 'freshadmin' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/invite sent to fresh-admin@example.com/i)).toBeTruthy();
     });
   });
 });

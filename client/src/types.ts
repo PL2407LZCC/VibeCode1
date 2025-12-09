@@ -22,6 +22,22 @@ export type AdminUser = {
   updatedAt: string;
 };
 
+export type AdminInvite = {
+  id: string;
+  email: string;
+  username: string;
+  status: 'pending' | 'sent' | 'accepted' | 'expired' | 'revoked';
+  invitedBy: {
+    id: string;
+    username: string;
+  } | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastSentAt: string | null;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+};
+
 export type AdminProduct = {
   id: string;
   title: string;

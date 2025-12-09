@@ -1,8 +1,46 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AdminUser } from '../types';
+import type { AdminInvite, AdminUser } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+const KNOWN_INVITE_STATUSES: ReadonlySet<AdminInvite['status']> = new Set(['pending', 'sent', 'accepted', 'expired', 'revoked']);
+
+const parseInvite = (value: unknown): AdminInvite => {
+  const record = (value ?? {}) as Record<string, unknown>;
+
+  const id = typeof record.id === 'string' ? record.id : String(record.id ?? '');
+  const email = typeof record.email === 'string' ? record.email : '';
+  const username = typeof record.username === 'string' ? record.username : '';
+  const statusRaw = typeof record.status === 'string' ? record.status.toLowerCase() : '';
+  const status = KNOWN_INVITE_STATUSES.has(statusRaw as AdminInvite['status']) ? (statusRaw as AdminInvite['status']) : 'pending';
+  const createdAt = typeof record.createdAt === 'string' ? record.createdAt : '';
+  const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : null;
+  const lastSentAt = typeof record.lastSentAt === 'string' ? record.lastSentAt : null;
+  const acceptedAt = typeof record.acceptedAt === 'string' ? record.acceptedAt : null;
+  const revokedAt = typeof record.revokedAt === 'string' ? record.revokedAt : null;
+
+  const invitedByRecord = record.invitedBy as Record<string, unknown> | undefined;
+  const invitedBy = invitedByRecord
+    ? {
+        id: typeof invitedByRecord.id === 'string' ? invitedByRecord.id : String(invitedByRecord.id ?? ''),
+        username: typeof invitedByRecord.username === 'string' ? invitedByRecord.username : ''
+      }
+    : null;
+
+  return {
+    id,
+    email,
+    username,
+    status,
+    invitedBy,
+    createdAt,
+    expiresAt,
+    lastSentAt,
+    acceptedAt,
+    revokedAt
+  };
+};
 
 export class UnauthorizedError extends Error {
   constructor(message = 'Session expired. Please sign in again.') {
@@ -35,6 +73,22 @@ type PasswordResetConfirmResult = {
   admin: AdminUser;
 };
 
+type InvitePreviewResult = {
+  invite: AdminInvite;
+  canAccept: boolean;
+  reason: string | null;
+};
+
+type AcceptInviteInput = {
+  token: string;
+  password: string;
+};
+
+type AcceptInviteResult = {
+  admin: AdminUser;
+  invite: AdminInvite;
+};
+
 type AdminAuthContextValue = {
   status: AdminAuthStatus;
   admin: AdminUser | null;
@@ -44,6 +98,8 @@ type AdminAuthContextValue = {
   logout: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<PasswordResetRequestResult>;
   confirmPasswordReset: (token: string, password: string) => Promise<PasswordResetConfirmResult>;
+  previewInvite: (token: string) => Promise<InvitePreviewResult>;
+  acceptInvite: (input: AcceptInviteInput) => Promise<AcceptInviteResult>;
   fetchWithAuth: (path: string, init?: RequestInit) => Promise<Response>;
 };
 
@@ -270,6 +326,90 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     return { admin: payload.admin };
   }, []);
 
+  const previewInvite = useCallback(async (token: string): Promise<InvitePreviewResult> => {
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      throw new Error('Invite token is required.');
+    }
+
+    const response = await fetch(`${API_URL}/auth/invite/preview`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ token: trimmedToken })
+    });
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      const message = payload?.message ?? 'Unable to preview invite.';
+      throw new Error(message);
+    }
+
+    const invitePayload = payload?.invite ?? payload;
+    const invite = parseInvite(invitePayload);
+    const reason = typeof payload?.reason === 'string' ? payload.reason : null;
+    const canAccept = typeof payload?.canAccept === 'boolean'
+      ? payload.canAccept
+      : (invite.status === 'pending' || invite.status === 'sent') && !reason;
+
+    return {
+      invite,
+      canAccept,
+      reason
+    };
+  }, []);
+
+  const acceptInvite = useCallback(async ({ token, password }: AcceptInviteInput): Promise<AcceptInviteResult> => {
+    const trimmedToken = token.trim();
+    if (!trimmedToken || !password) {
+      throw new Error('Invite token and password are required.');
+    }
+
+    setError(null);
+
+    const response = await fetch(`${API_URL}/auth/invite/accept`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ token: trimmedToken, password })
+    });
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload?.admin) {
+      const message = payload?.message ?? 'Unable to activate admin account.';
+      throw new Error(message);
+    }
+
+    const invite = parseInvite(payload.invite);
+    const adminPayload = payload.admin as AdminUser;
+
+    if (isMounted.current) {
+      setAdmin(adminPayload);
+      setStatus('authenticated');
+    }
+
+    return {
+      admin: adminPayload,
+      invite
+    };
+  }, []);
+
   const value = useMemo<AdminAuthContextValue>(
     () => ({
       status,
@@ -280,9 +420,11 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       logout,
       requestPasswordReset,
       confirmPasswordReset,
+      previewInvite,
+      acceptInvite,
       fetchWithAuth
     }),
-    [status, admin, error, clearError, login, logout, requestPasswordReset, confirmPasswordReset, fetchWithAuth]
+    [status, admin, error, clearError, login, logout, requestPasswordReset, confirmPasswordReset, previewInvite, acceptInvite, fetchWithAuth]
   );
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;

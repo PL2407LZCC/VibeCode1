@@ -3,7 +3,7 @@ import { useAdminAuth } from '../providers/AdminAuthProvider';
 
 const MIN_PASSWORD_LENGTH = 12;
 
-type PanelMode = 'login' | 'reset-request' | 'reset-confirm';
+type PanelMode = 'login' | 'reset-request' | 'reset-confirm' | 'invite-accept';
 
 type AdminAuthPanelProps = {
   initialMode?: PanelMode;
@@ -36,8 +36,37 @@ const clearResetTokenFromLocation = () => {
   }
 };
 
+const getInviteTokenFromLocation = () => {
+  if (typeof window === 'undefined') {
+    return { token: '', isInvitePath: false };
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('token')?.trim() ?? '';
+    const isInvitePath = url.pathname.toLowerCase().includes('/invite');
+    return { token, isInvitePath };
+  } catch {
+    return { token: '', isInvitePath: false };
+  }
+};
+
+const clearInviteTokenFromLocation = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('token');
+    window.history.replaceState(window.history.state, document.title, url.toString());
+  } catch {
+    // Ignore history manipulation issues in unsupported environments.
+  }
+};
+
 export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
-  const { login, requestPasswordReset, confirmPasswordReset } = useAdminAuth();
+  const { login, requestPasswordReset, confirmPasswordReset, previewInvite, acceptInvite } = useAdminAuth();
   const [mode, setMode] = useState<PanelMode>(initialMode);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +78,12 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [debugToken, setDebugToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState('');
+  type InvitePreviewState = ReturnType<typeof previewInvite> extends Promise<infer R> ? R : never;
+  const [invitePreview, setInvitePreview] = useState<InvitePreviewState | null>(null);
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteConfirmPassword, setInviteConfirmPassword] = useState('');
+  const [isInviteLoading, setIsInviteLoading] = useState(false);
 
   const effectiveMode: PanelMode = useMemo(() => {
     if (mode === 'reset-confirm' && !resetToken) {
@@ -57,7 +92,32 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
     return mode;
   }, [mode, resetToken]);
 
+  const inviteDateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    []
+  );
+
+  const formatInviteDate = (value: string | null): string => {
+    if (!value) {
+      return '—';
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '—';
+    }
+
+    return inviteDateFormatter.format(date);
+  };
+
   useEffect(() => {
+    const inviteContext = getInviteTokenFromLocation();
+    if (inviteContext.isInvitePath) {
+      setInviteToken(inviteContext.token);
+      setMode('invite-accept');
+      return;
+    }
+
     const token = getResetTokenFromLocation();
     if (token) {
       setResetToken(token);
@@ -71,6 +131,70 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
     setError(null);
   }, []);
 
+  useEffect(() => {
+    if (mode !== 'invite-accept') {
+      setInvitePreview(null);
+      setInvitePassword('');
+      setInviteConfirmPassword('');
+      return;
+    }
+
+    if (!inviteToken) {
+      setInvitePreview(null);
+      setInvitePassword('');
+      setInviteConfirmPassword('');
+      return;
+    }
+
+    let cancelled = false;
+    resetFeedback();
+    setIsInviteLoading(true);
+
+    const handle = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
+      previewInvite(inviteToken)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+
+          setInvitePreview(result);
+          setInvitePassword('');
+          setInviteConfirmPassword('');
+
+          if (!result.canAccept && result.reason) {
+            setError(result.reason);
+            setMessage(null);
+          } else {
+            setError(null);
+            setMessage(`Invite for ${result.invite.email}. Set your password to continue.`);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) {
+            return;
+          }
+          setInvitePreview(null);
+          setError(err instanceof Error ? err.message : 'Unable to load invite.');
+          setMessage(null);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsInviteLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+      setIsInviteLoading(false);
+    };
+  }, [mode, inviteToken, previewInvite, resetFeedback]);
+
   const switchMode = useCallback(
     (nextMode: PanelMode) => {
       resetFeedback();
@@ -81,6 +205,13 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
       setEmail('');
       if (nextMode !== 'reset-confirm') {
         setResetToken('');
+      }
+      if (nextMode !== 'invite-accept') {
+        setInviteToken('');
+        setInvitePreview(null);
+        setInvitePassword('');
+        setInviteConfirmPassword('');
+        clearInviteTokenFromLocation();
       }
       setMode(nextMode);
     },
@@ -172,6 +303,55 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
     }
   };
 
+  const handleInviteAccept = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetFeedback();
+
+    const token = inviteToken.trim();
+
+    if (!token) {
+      setError('Invite token is required.');
+      return;
+    }
+
+    if (!invitePreview) {
+      setError('Unable to load invite details. Please refresh the link.');
+      return;
+    }
+
+    if (!invitePreview.canAccept) {
+      setError(invitePreview.reason ?? 'Invite cannot be accepted.');
+      return;
+    }
+
+    if (!invitePassword || !inviteConfirmPassword) {
+      setError('Enter and confirm your new password.');
+      return;
+    }
+
+    if (invitePassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+
+    if (invitePassword !== inviteConfirmPassword) {
+      setError('Password confirmation does not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await acceptInvite({ token, password: invitePassword });
+      setMessage('Welcome aboard! Redirecting to your dashboard…');
+      clearInviteTokenFromLocation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to activate admin account.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <section className="admin-auth-panel" aria-live="polite">
       <header className="admin-auth-panel__header">
@@ -179,11 +359,13 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
           {effectiveMode === 'login' && 'Admin Sign In'}
           {effectiveMode === 'reset-request' && 'Reset Password'}
           {effectiveMode === 'reset-confirm' && 'Set New Password'}
+          {effectiveMode === 'invite-accept' && 'Accept Admin Invitation'}
         </h2>
         <p className="admin-auth-panel__subtitle">
           {effectiveMode === 'login' && 'Access the dashboard with your admin credentials.'}
           {effectiveMode === 'reset-request' && 'Enter your email to receive reset instructions.'}
           {effectiveMode === 'reset-confirm' && 'Choose a strong password to secure your account.'}
+          {effectiveMode === 'invite-accept' && 'Join the team by setting a password for your new admin account.'}
         </p>
       </header>
 
@@ -193,7 +375,7 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
         </div>
       ) : null}
       {message ? <div className="admin-auth-panel__alert admin-auth-panel__alert--info">{message}</div> : null}
-      {debugToken ? (
+      {debugToken && effectiveMode !== 'invite-accept' ? (
         <div className="admin-auth-panel__debug" role="note">
           <strong>Debug token:</strong> <code>{debugToken}</code>
         </div>
@@ -330,6 +512,96 @@ export function AdminAuthPanel({ initialMode = 'login' }: AdminAuthPanelProps) {
               className="admin-button admin-button--ghost"
               onClick={() => switchMode('login')}
               disabled={isSubmitting}
+            >
+              Back to sign in
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      {effectiveMode === 'invite-accept' ? (
+        <form className="admin-auth-panel__form" onSubmit={handleInviteAccept}>
+          <label className="admin-auth-panel__field">
+            <span>Invite token</span>
+            <input
+              type="text"
+              value={inviteToken}
+              onChange={(event) => setInviteToken(event.target.value)}
+              disabled={isInviteLoading || isSubmitting}
+              required
+            />
+          </label>
+
+          {isInviteLoading ? (
+            <p className="admin-auth-panel__status" role="status">
+              Validating invite…
+            </p>
+          ) : null}
+
+          {invitePreview ? (
+            <div className="admin-auth-panel__invite-summary" aria-live="polite">
+              <p>
+                <strong>Email:</strong> {invitePreview.invite.email}
+              </p>
+              <p>
+                <strong>Username:</strong> {invitePreview.invite.username}
+              </p>
+              <p>
+                <strong>Invited by:</strong> {invitePreview.invite.invitedBy?.username ?? '—'}
+              </p>
+              <p>
+                <strong>Expires:</strong> {formatInviteDate(invitePreview.invite.expiresAt)}
+              </p>
+              {!invitePreview.canAccept && invitePreview.reason ? (
+                <p className="admin-auth-panel__invite-warning" role="alert">{invitePreview.reason}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <label className="admin-auth-panel__field">
+            <span>New password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={invitePassword}
+              onChange={(event) => setInvitePassword(event.target.value)}
+              disabled={isSubmitting || isInviteLoading || !(invitePreview?.canAccept ?? false)}
+              minLength={MIN_PASSWORD_LENGTH}
+              required={invitePreview?.canAccept ?? false}
+            />
+            <small>Use at least {MIN_PASSWORD_LENGTH} characters.</small>
+          </label>
+
+          <label className="admin-auth-panel__field">
+            <span>Confirm new password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={inviteConfirmPassword}
+              onChange={(event) => setInviteConfirmPassword(event.target.value)}
+              disabled={isSubmitting || isInviteLoading || !(invitePreview?.canAccept ?? false)}
+              minLength={MIN_PASSWORD_LENGTH}
+              required={invitePreview?.canAccept ?? false}
+            />
+          </label>
+
+          <div className="admin-auth-panel__actions">
+            <button
+              type="submit"
+              className="admin-button admin-button--primary"
+              disabled={
+                isSubmitting ||
+                isInviteLoading ||
+                !(invitePreview?.canAccept ?? false)
+              }
+            >
+              {isSubmitting ? 'Activating…' : 'Activate account'}
+            </button>
+            <button
+              type="button"
+              className="admin-button admin-button--ghost"
+              onClick={() => switchMode('login')}
+              disabled={isSubmitting || isInviteLoading}
             >
               Back to sign in
             </button>

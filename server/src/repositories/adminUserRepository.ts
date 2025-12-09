@@ -51,6 +51,15 @@ export function toPublicAdminUser(user: AdminUserWithSecrets): AdminUserPublic {
   return publicFields;
 }
 
+export async function listAdminUsers(): Promise<AdminUserPublic[]> {
+  return prisma.adminUser.findMany({
+    select: adminUserPublicSelect,
+    orderBy: {
+      createdAt: 'asc'
+    }
+  });
+}
+
 export async function createAdminUser(data: {
   email: string;
   username: string;
@@ -141,6 +150,16 @@ export async function resetFailedLoginAttempts(id: string): Promise<AdminUserWit
     where: { id },
     data: {
       failedLoginAttempts: 0
+    },
+    select: adminUserSecretSelect
+  });
+}
+
+export async function updateAdminActiveState(id: string, isActive: boolean): Promise<AdminUserWithSecrets> {
+  return prisma.adminUser.update({
+    where: { id },
+    data: {
+      isActive
     },
     select: adminUserSecretSelect
   });
