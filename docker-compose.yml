@@ -8,6 +8,18 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres@db:5432/vibecode1?schema=public
       ADMIN_API_KEY: changeme-admin-key
+      ADMIN_SESSION_SECRET: dev-admin-session-secret-change-me-please-1234567890
+      ADMIN_SESSION_TTL_HOURS: 12
+      ADMIN_SESSION_REMEMBER_DAYS: 30
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: 30
+      ADMIN_APP_URL: http://localhost:5173/admin
+      ADMIN_RESET_URL: http://localhost:5173/admin/reset
+      SMTP_HOST: ""
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      SMTP_FROM: "VibeCode Admin <no-reply@example.com>"
       CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
     ports:
       - '3000:3000'

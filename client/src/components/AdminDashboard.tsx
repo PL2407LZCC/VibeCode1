@@ -1,7 +1,13 @@
-import { ChangeEvent, FormEvent, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
+import { AdminManagementPanel } from './AdminManagementPanel';
 import type { AdminProduct } from '../types';
 import { SalesOverview } from './SalesOverview';
+import { TransactionsPanel } from './TransactionsPanel';
+
+type AdminDashboardProps = {
+  refreshToken?: number;
+};
 
 type StatusKind = 'success' | 'error';
 
@@ -61,14 +67,16 @@ const CREATE_FIELD_IDS = {
 } as const;
 
 const COLLAPSIBLE_SECTION_IDS = {
+  adminManagement: 'admin-section-management',
   create: 'admin-section-create',
   catalog: 'admin-section-catalog',
-  sales: 'admin-section-sales'
+  sales: 'admin-section-sales',
+  transactions: 'admin-section-transactions'
 } as const;
 
 type CollapsibleSectionKey = keyof typeof COLLAPSIBLE_SECTION_IDS;
 
-export function AdminDashboard() {
+export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
   const {
     products,
     config,
@@ -86,12 +94,36 @@ export function AdminDashboard() {
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
+    adminManagement: false,
     create: false,
     catalog: false,
-    sales: false
+    sales: false,
+    transactions: false
   });
 
-  const { create: isCreateOpen, catalog: isCatalogOpen, sales: isSalesOpen } = expandedSections;
+  const {
+    adminManagement: isAdminManagementOpen,
+    create: isCreateOpen,
+    catalog: isCatalogOpen,
+    sales: isSalesOpen,
+    transactions: isTransactionsOpen
+  } = expandedSections;
+
+  const lastRefreshToken = useRef<number | undefined>(refreshToken);
+
+  useEffect(() => {
+    if (refreshToken === undefined) {
+      return;
+    }
+
+    if (lastRefreshToken.current !== undefined && refreshToken !== lastRefreshToken.current) {
+      lastRefreshToken.current = refreshToken;
+      void refresh();
+      return;
+    }
+
+    lastRefreshToken.current = refreshToken;
+  }, [refreshToken, refresh]);
 
   const handleStatus = (kind: StatusKind, text: string) => {
     setStatus({ kind, text });
@@ -208,6 +240,31 @@ export function AdminDashboard() {
       {status && !error && <div className={`admin-banner admin-banner--${status.kind}`}>{status.text}</div>}
 
       <div className="admin-dashboard__grid">
+        <section className="admin-card admin-card--wide">
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('adminManagement')}
+            aria-expanded={isAdminManagementOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.adminManagement}
+          >
+            <span
+              className={`admin-card__summary-icon${isAdminManagementOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
+              <h2>Admin Management</h2>
+              <p className="admin-card__subtitle">Invite new admins and adjust access in one place.</p>
+            </div>
+          </button>
+
+          {isAdminManagementOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.adminManagement} className="admin-card__content">
+              <AdminManagementPanel onStatus={handleStatus} />
+            </div>
+          ) : null}
+        </section>
+
         <section className="admin-card admin-card--wide">
           <button
             type="button"
@@ -458,6 +515,31 @@ export function AdminDashboard() {
           {isSalesOpen ? (
             <div id={COLLAPSIBLE_SECTION_IDS.sales} className="admin-card__content">
               <SalesOverview stats={stats} isLoading={isLoading} />
+            </div>
+          ) : null}
+        </section>
+
+        <section className="admin-card admin-card--wide">
+          <button
+            type="button"
+            className="admin-card__summary"
+            onClick={() => toggleSection('transactions')}
+            aria-expanded={isTransactionsOpen}
+            aria-controls={COLLAPSIBLE_SECTION_IDS.transactions}
+          >
+            <span
+              className={`admin-card__summary-icon${isTransactionsOpen ? ' admin-card__summary-icon--open' : ''}`}
+              aria-hidden="true"
+            />
+            <div className="admin-card__summary-content">
+              <h2>Transactions</h2>
+              <p className="admin-card__subtitle">Inspect confirmed payments by date range and category.</p>
+            </div>
+          </button>
+
+          {isTransactionsOpen ? (
+            <div id={COLLAPSIBLE_SECTION_IDS.transactions} className="admin-card__content">
+              <TransactionsPanel onError={(message) => handleStatus('error', message)} />
             </div>
           ) : null}
         </section>

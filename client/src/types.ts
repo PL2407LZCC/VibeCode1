@@ -12,6 +12,32 @@ export type CartLine = {
   quantity: number;
 };
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  username: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminInvite = {
+  id: string;
+  email: string;
+  username: string;
+  status: 'pending' | 'sent' | 'accepted' | 'expired' | 'revoked';
+  invitedBy: {
+    id: string;
+    username: string;
+  } | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastSentAt: string | null;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+};
+
 export type AdminProduct = {
   id: string;
   title: string;
@@ -118,4 +144,49 @@ export type ProductPerformanceEntry = {
     last30Days: ProductPerformanceWindow;
     lifetime: ProductPerformanceWindow;
   };
+};
+
+export type TransactionLineItem = {
+  productId: string;
+  title: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+};
+
+export type TransactionCategoryBreakdownEntry = {
+  category: string;
+  quantity: number;
+  revenue: number;
+};
+
+export type AdminTransaction = {
+  id: string;
+  reference: string | null;
+  status: string;
+  notes: string | null;
+  totalAmount: number;
+  createdAt: string;
+  isDeleted: boolean;
+  deletedAt: string | null;
+  deletedBy: {
+    id: string;
+    username: string;
+  } | null;
+  lineItems: TransactionLineItem[];
+  categoryBreakdown: TransactionCategoryBreakdownEntry[];
+};
+
+export type TransactionRange = {
+  start: string;
+  end: string;
+};
+
+export type AdminTransactionsResponse = {
+  range: TransactionRange;
+  categoryFilter: string | null;
+  includeDeleted: boolean;
+  categories: string[];
+  transactions: AdminTransaction[];
 };

@@ -7,7 +7,6 @@ export type CartPanelProps = {
   onDecrease: (productId: string) => void;
   onClear: () => void;
   onCheckout: () => void;
-  paymentReference?: string | null;
 };
 
 export function CartPanel({
@@ -16,8 +15,7 @@ export function CartPanel({
   onIncrease,
   onDecrease,
   onClear,
-  onCheckout,
-  paymentReference
+  onCheckout
 }: CartPanelProps) {
   const isEmpty = lines.length === 0;
 
@@ -63,14 +61,8 @@ export function CartPanel({
           onClick={onCheckout}
           disabled={isEmpty}
         >
-          Generate Payment QR
+          Pay
         </button>
-        {paymentReference && (
-          <div className="cart-panel__receipt" role="status">
-            <p className="cart-panel__receipt-title">Mock QR Reference</p>
-            <code>{paymentReference}</code>
-          </div>
-        )}
       </footer>
     </aside>
   );

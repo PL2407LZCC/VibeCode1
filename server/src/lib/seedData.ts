@@ -1,4 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
+import { hashPassword } from './password';
 
 type SeedPurchaseItem = {
   productId: string;
@@ -12,7 +14,43 @@ type SeedPurchase = {
   items: SeedPurchaseItem[];
 };
 
-export async function seedDatabase(prisma: PrismaClient) {
+type SeedResult = {
+  createdProducts: number;
+  adjustmentsCreated: number;
+  purchasesCreated: number;
+  adminAccount?: {
+    email: string;
+    username: string;
+    password: string;
+  };
+};
+
+async function ensureAdminAccount(prisma: PrismaClient): Promise<SeedResult['adminAccount']> {
+  const adminCount = await prisma.adminUser.count();
+  if (adminCount > 0) {
+    return undefined;
+  }
+
+  const email = 'admin@localhost';
+  const username = 'admin';
+  const password = randomBytes(18).toString('base64url');
+  const passwordRecord = await hashPassword(password, { skipPolicy: true });
+
+  await prisma.adminUser.create({
+    data: {
+      email,
+      username,
+      passwordHash: passwordRecord.hash,
+      passwordAlgorithm: passwordRecord.algorithm,
+      passwordVersion: passwordRecord.version,
+      isActive: true
+    }
+  });
+
+  return { email, username, password };
+}
+
+export async function seedDatabase(prisma: PrismaClient): Promise<SeedResult> {
   await prisma.kioskSetting.upsert({
     where: { id: 'default' },
     update: {},
@@ -326,6 +364,7 @@ export async function seedDatabase(prisma: PrismaClient) {
   return {
     createdProducts,
     adjustmentsCreated: inventoryAdjustments.length,
-    purchasesCreated
+    purchasesCreated,
+    adminAccount: await ensureAdminAccount(prisma)
   };
 }

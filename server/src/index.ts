@@ -1,6 +1,8 @@
 import express, { type Request, type Response } from 'express';
-import multer, { MulterError } from 'multer';
+import { Prisma } from '@prisma/client';
+import multer, { MulterError, type FileFilterCallback } from 'multer';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import requireAdmin from './middleware/requireAdmin';
 import {
   listActiveProducts,
@@ -22,6 +24,35 @@ import {
   createUploadFilename,
   toPublicUploadPath
 } from './lib/uploads';
+import { env } from './lib/env';
+import {
+  ADMIN_SESSION_COOKIE,
+  clearAdminSessionCookie,
+  createAdminSessionToken,
+  getSessionTokenFromRequest,
+  verifyAdminSessionToken
+} from './lib/adminSession';
+import {
+  authenticateWithPassword,
+  confirmPasswordReset,
+  requestPasswordReset
+} from './services/adminAuthService';
+import { sendPasswordResetEmail } from './services/adminEmailService';
+import {
+  listAdminDirectory,
+  issueAdminInvite,
+  resendAdminInvite,
+  revokeAdminInvite,
+  updateAdminActivation,
+  previewAdminInvite,
+  acceptAdminInvite,
+  AdminDirectoryError,
+  AdminInviteAcceptanceError
+} from './services/adminInviteService';
+import {
+  findAdminUserById,
+  toPublicAdminUser
+} from './repositories/adminUserRepository';
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
@@ -30,6 +61,17 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:51
   .map((origin) => origin.trim())
   .filter(Boolean);
 const shouldAutoSeed = (process.env.AUTO_SEED ?? 'true').toLowerCase() !== 'false';
+const secureCookies = env.NODE_ENV === 'production';
+const includeDebugTokens = env.NODE_ENV !== 'production';
+
+const setAdminSessionCookie = (res: Response, token: string, maxAgeMs: number) => {
+  res.cookie(ADMIN_SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: secureCookies,
+    maxAge: maxAgeMs
+  });
+};
 
 type PurchaseItemPayload = {
   productId: unknown;
@@ -118,12 +160,12 @@ type UploadMiddlewareError = Error & { code?: string };
 
 const imageUpload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
+    destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
       ensureUploadsDir()
         .then(() => cb(null, UPLOADS_DIR))
         .catch((error) => cb(error as Error, UPLOADS_DIR));
     },
-    filename: (_req, file, cb) => {
+    filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
       try {
         const filename = createUploadFilename(file.mimetype, file.originalname);
         cb(null, filename);
@@ -135,7 +177,7 @@ const imageUpload = multer({
   limits: {
     fileSize: MAX_UPLOAD_SIZE_BYTES
   },
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
       const error: UploadMiddlewareError = new Error('Only JPEG, PNG, or WebP images are allowed.');
       error.code = 'UNSUPPORTED_FILE_TYPE';
@@ -152,9 +194,11 @@ const MAX_UPLOAD_SIZE_MB = Math.max(1, Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    credentials: true
   })
 );
+app.use(cookieParser(env.ADMIN_SESSION_SECRET));
 app.use(express.json());
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -177,6 +221,306 @@ app.get('/config', async (_req: Request, res: Response) => {
     res.json(config);
   } catch (error) {
     res.status(500).json({ message: 'Unable to load kiosk configuration.' });
+  }
+});
+
+app.get('/auth/session', async (req: Request, res: Response) => {
+  const sessionToken = getSessionTokenFromRequest(req);
+
+  if (!sessionToken) {
+    return res.json({ admin: null, status: 'EMPTY' as const });
+  }
+
+  const verification = verifyAdminSessionToken(sessionToken);
+
+  if (verification.status !== 'VALID') {
+    clearAdminSessionCookie(res);
+    return res.json({ admin: null, status: verification.status });
+  }
+
+  try {
+    const admin = await findAdminUserById(verification.claims.sub);
+    if (!admin || !admin.isActive) {
+      clearAdminSessionCookie(res);
+      return res.json({ admin: null, status: 'INVALID' as const });
+    }
+
+    return res.json({ admin: toPublicAdminUser(admin), status: 'VALID' as const });
+  } catch (error) {
+    console.error('Failed to resolve admin session', error);
+    return res.status(500).json({ message: 'Unable to verify session.' });
+  }
+});
+
+app.post('/auth/login', async (req: Request, res: Response) => {
+  const { identifier, password, remember } = req.body as {
+    identifier?: unknown;
+    password?: unknown;
+    remember?: unknown;
+  };
+
+  if (typeof identifier !== 'string' || identifier.trim().length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Identifier and password are required.' });
+  }
+
+  try {
+    const authResult = await authenticateWithPassword(identifier, password);
+
+    if (authResult.status === 'SUCCESS') {
+      const session = createAdminSessionToken(authResult.admin, {
+        remember: remember === true
+      });
+
+      setAdminSessionCookie(res, session.token, session.maxAgeMs);
+
+      return res.json({
+        admin: authResult.admin,
+        needsPasswordUpgrade: authResult.needsPasswordUpgrade
+      });
+    }
+
+    clearAdminSessionCookie(res);
+
+    if (authResult.status === 'INVALID_CREDENTIALS') {
+      return res.status(401).json({
+        message: 'Invalid email/username or password.',
+        remainingAttempts: authResult.remainingAttempts
+      });
+    }
+
+    if (authResult.status === 'ACCOUNT_LOCKED') {
+      return res.status(423).json({
+        message: 'Account locked due to too many failed attempts. Please reset your password.'
+      });
+    }
+
+    if (authResult.status === 'ACCOUNT_DISABLED') {
+      return res.status(403).json({
+        message: 'Account is disabled. Contact support.'
+      });
+    }
+
+    return res.status(500).json({ message: 'Unable to login.' });
+  } catch (error) {
+    console.error('Failed to authenticate admin user', error);
+    return res.status(500).json({ message: 'Unable to login.' });
+  }
+});
+
+app.post('/auth/logout', (_req: Request, res: Response) => {
+  clearAdminSessionCookie(res);
+  res.status(204).send();
+});
+
+app.post('/auth/password-reset/request', async (req: Request, res: Response) => {
+  const { email } = req.body as { email?: unknown };
+
+  if (typeof email !== 'string' || email.trim().length === 0) {
+    return res.status(400).json({ message: 'Email is required.' });
+  }
+
+  try {
+    const result = await requestPasswordReset(email);
+    const responseBody: Record<string, unknown> = {
+      message: 'If an account matches that email, password reset instructions have been sent.'
+    };
+
+    if (result.token && result.admin && result.expiresAt) {
+      await sendPasswordResetEmail({
+        email: result.admin.email,
+        username: result.admin.username,
+        token: result.token,
+        expiresAt: result.expiresAt
+      });
+    }
+
+    if (result.token && env.NODE_ENV !== 'production') {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt?.toISOString();
+      responseBody.admin = result.admin;
+    }
+
+    return res.status(202).json(responseBody);
+  } catch (error) {
+    console.error('Failed to issue password reset token', error);
+    return res.status(500).json({ message: 'Unable to process reset request.' });
+  }
+});
+
+app.post('/auth/password-reset/confirm', async (req: Request, res: Response) => {
+  const { token, password } = req.body as { token?: unknown; password?: unknown };
+
+  if (typeof token !== 'string' || token.length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Reset token and new password are required.' });
+  }
+
+  try {
+    const result = await confirmPasswordReset(token, password);
+
+    if (result.status === 'SUCCESS') {
+      const session = createAdminSessionToken(result.admin);
+      setAdminSessionCookie(res, session.token, session.maxAgeMs);
+      return res.json({
+        message: 'Password updated successfully.',
+        admin: result.admin
+      });
+    }
+
+    if (result.status === 'POLICY_VIOLATION') {
+      return res.status(422).json({ message: result.message });
+    }
+
+    return res.status(400).json({ message: 'Invalid or expired reset token.' });
+  } catch (error) {
+    console.error('Failed to confirm password reset', error);
+    return res.status(500).json({ message: 'Unable to complete password reset.' });
+  }
+});
+
+app.post('/auth/invite/preview', async (req: Request, res: Response) => {
+  const { token } = req.body as { token?: unknown };
+
+  if (typeof token !== 'string' || token.trim().length === 0) {
+    return res.status(400).json({ message: 'Invite token is required.' });
+  }
+
+  try {
+    const preview = await previewAdminInvite(token);
+    return res.json(preview);
+  } catch (error) {
+    if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to preview admin invite', error);
+    return res.status(500).json({ message: 'Unable to preview invite.' });
+  }
+});
+
+app.post('/auth/invite/accept', async (req: Request, res: Response) => {
+  const { token, password } = req.body as { token?: unknown; password?: unknown };
+
+  if (typeof token !== 'string' || token.trim().length === 0 || typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'Invite token and password are required.' });
+  }
+
+  try {
+    const result = await acceptAdminInvite({ token, password });
+    const session = createAdminSessionToken(result.admin);
+    setAdminSessionCookie(res, session.token, session.maxAgeMs);
+
+    return res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to accept admin invite', error);
+    return res.status(500).json({ message: 'Unable to activate admin account.' });
+  }
+});
+
+app.get('/admin/users', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const directory = await listAdminDirectory();
+    return res.json(directory);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to load admin directory', error);
+    return res.status(500).json({ message: 'Unable to load admin directory.' });
+  }
+});
+
+app.post('/admin/users/invite', requireAdmin, async (req: Request, res: Response) => {
+  const { email, username } = req.body as { email?: unknown; username?: unknown };
+
+  if (typeof email !== 'string' || typeof username !== 'string') {
+    return res.status(400).json({ message: 'Email and username are required.' });
+  }
+
+  try {
+    const result = await issueAdminInvite({
+      email,
+      username,
+      invitedByAdminId: req.admin?.id
+    });
+
+    const responseBody: Record<string, unknown> = {
+      invite: result.invite
+    };
+
+    if (includeDebugTokens) {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt ? result.expiresAt.toISOString() : null;
+    }
+
+    return res.status(201).json(responseBody);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to issue admin invite', error);
+    return res.status(500).json({ message: 'Unable to send invite.' });
+  }
+});
+
+app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request, res: Response) => {
+  const inviteId = req.params.id;
+
+  try {
+    const result = await resendAdminInvite(inviteId, req.admin?.id);
+
+    const responseBody: Record<string, unknown> = {
+      invite: result.invite
+    };
+
+    if (includeDebugTokens) {
+      responseBody.debugToken = result.token;
+      responseBody.expiresAt = result.expiresAt ? result.expiresAt.toISOString() : null;
+    }
+
+    return res.json(responseBody);
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to resend admin invite', error);
+    return res.status(500).json({ message: 'Unable to resend invite.' });
+  }
+});
+
+app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request, res: Response) => {
+  const inviteId = req.params.id;
+
+  try {
+    await revokeAdminInvite(inviteId);
+    return res.status(204).send();
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to revoke admin invite', error);
+    return res.status(500).json({ message: 'Unable to revoke invite.' });
+  }
+});
+
+app.patch('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { isActive } = req.body as { isActive?: unknown };
+
+  if (typeof isActive !== 'boolean') {
+    return res.status(400).json({ message: 'isActive must be a boolean.' });
+  }
+
+  try {
+    const admin = await updateAdminActivation(id, isActive, req.admin?.id);
+    return res.json({ admin });
+  } catch (error) {
+    if (error instanceof AdminDirectoryError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('Failed to update admin status', error);
+    return res.status(500).json({ message: 'Unable to update admin account.' });
   }
 });
 
@@ -499,14 +843,23 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       hourlyTransactionsRows
     ] = await Promise.all([
       prisma.purchase.aggregate({
+        where: {
+          isDeleted: false
+        },
         _sum: { totalAmount: true },
         _count: { _all: true }
       }),
       prisma.purchaseItem.aggregate({
+        where: {
+          purchase: {
+            isDeleted: false
+          }
+        },
         _sum: { quantity: true }
       }),
       prisma.purchase.findMany({
         where: {
+          isDeleted: false,
           createdAt: {
             gte: historyWindowStart
           }
@@ -517,6 +870,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
       prisma.purchaseItem.findMany({
         where: {
           purchase: {
+            isDeleted: false,
             createdAt: {
               gte: lineItemWindowStart
             }
@@ -555,6 +909,7 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
         FROM "purchase_items"
         INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
         WHERE "purchases"."createdAt" >= ${currentDailyStart}
+          AND "purchases"."isDeleted" = false
         GROUP BY "purchase_items"."productId"
       `,
       prisma.$queryRaw<ProductSalesRow[]>`
@@ -562,12 +917,15 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
                SUM("purchase_items"."quantity") AS "quantity",
                SUM("purchase_items"."quantity" * "purchase_items"."unitPrice") AS "revenue"
         FROM "purchase_items"
+        INNER JOIN "purchases" ON "purchase_items"."purchaseId" = "purchases"."id"
+        WHERE "purchases"."isDeleted" = false
         GROUP BY "purchase_items"."productId"
       `,
       prisma.$queryRaw<HourlyTransactionsRow[]>`
-        SELECT EXTRACT(HOUR FROM "purchases"."createdAt")::int AS "hour",
+        SELECT EXTRACT(HOUR FROM timezone('Europe/Helsinki', "purchases"."createdAt" AT TIME ZONE 'UTC'))::int AS "hour",
                COUNT(*)::bigint AS "transactions"
         FROM "purchases"
+        WHERE "purchases"."isDeleted" = false
         GROUP BY 1
         ORDER BY 1
       `
@@ -924,6 +1282,267 @@ adminRouter.get('/stats/sales', async (_req: Request, res: Response) => {
   }
 });
 
+type AdminTransactionsQuery = {
+  start?: string;
+  end?: string;
+  category?: string;
+  includeDeleted?: string;
+};
+
+const transactionDetailsSelect = {
+  id: true,
+  reference: true,
+  totalAmount: true,
+  status: true,
+  notes: true,
+  createdAt: true,
+  isDeleted: true,
+  deletedAt: true,
+  deletedByAdmin: {
+    select: {
+      id: true,
+      username: true
+    }
+  },
+  items: {
+    select: {
+      quantity: true,
+      unitPrice: true,
+      product: {
+        select: {
+          id: true,
+          title: true,
+          category: true
+        }
+      }
+    }
+  }
+} as const;
+
+type TransactionRow = Prisma.PurchaseGetPayload<{
+  select: typeof transactionDetailsSelect;
+}>;
+
+const MAX_TRANSACTION_WINDOW_DAYS = 90;
+
+const parseTransactionQuery = (query: AdminTransactionsQuery) => {
+  const now = new Date();
+  const today = startOfDayUtc(now);
+
+  let startDate: Date | null = null;
+  let endDate: Date | null = null;
+
+  if (query.start) {
+    const parsed = new Date(query.start);
+    if (Number.isNaN(parsed.getTime())) {
+      return { error: 'Invalid start date. Use ISO 8601 (YYYY-MM-DD).' } as const;
+    }
+    startDate = startOfDayUtc(parsed);
+  }
+
+  if (query.end) {
+    const parsed = new Date(query.end);
+    if (Number.isNaN(parsed.getTime())) {
+      return { error: 'Invalid end date. Use ISO 8601 (YYYY-MM-DD).' } as const;
+    }
+    endDate = addDaysUtc(startOfDayUtc(parsed), 1);
+  }
+
+  if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+    return { error: 'Start date must be before end date.' } as const;
+  }
+
+  if (!startDate && endDate) {
+    startDate = addDaysUtc(endDate, -MAX_TRANSACTION_WINDOW_DAYS);
+  }
+
+  if (!startDate) {
+    startDate = addDaysUtc(today, -(MAX_TRANSACTION_WINDOW_DAYS - 1));
+  }
+
+  if (!endDate) {
+    endDate = addDaysUtc(today, 1);
+  }
+
+  const windowMs = endDate.getTime() - startDate.getTime();
+  const maxWindowMs = MAX_TRANSACTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  if (windowMs > maxWindowMs) {
+    return { error: `Date range cannot exceed ${MAX_TRANSACTION_WINDOW_DAYS} days.` } as const;
+  }
+
+  const category = normalizeCategory(query.category);
+  const includeDeleted = typeof query.includeDeleted === 'string'
+    ? ['true', '1', 'yes'].includes(query.includeDeleted.trim().toLowerCase())
+    : false;
+
+  return {
+    data: {
+      start: startDate,
+      end: endDate,
+      categoryFilter: category === 'Uncategorized' && !query.category ? null : category,
+      includeDeleted
+    }
+  } as const;
+};
+
+const toTransactionSummary = (rows: TransactionRow[]) => {
+  return rows.map((transaction) => {
+    const totalAmount = normalizeDecimal(transaction.totalAmount);
+    const sortedItems = [...transaction.items].sort((a, b) => a.product.title.localeCompare(b.product.title));
+    const lineItems = sortedItems.map((item) => ({
+      productId: item.product.id,
+      title: item.product.title,
+      category: item.product.category ?? 'Uncategorized',
+      quantity: item.quantity,
+      unitPrice: normalizeDecimal(item.unitPrice),
+      subtotal: normalizeDecimal(item.unitPrice) * item.quantity
+    }));
+
+    const categoryBreakdown = lineItems.reduce<Record<string, { quantity: number; revenue: number }>>((acc, item) => {
+      const key = item.category ?? 'Uncategorized';
+      if (!acc[key]) {
+        acc[key] = { quantity: 0, revenue: 0 };
+      }
+      acc[key].quantity += item.quantity;
+      acc[key].revenue += item.subtotal;
+      return acc;
+    }, {});
+
+    return {
+      id: transaction.id,
+      reference: transaction.reference,
+      status: transaction.status,
+      notes: transaction.notes ?? null,
+      totalAmount: Number(totalAmount.toFixed(2)),
+      createdAt: transaction.createdAt.toISOString(),
+      isDeleted: transaction.isDeleted,
+      deletedAt: transaction.deletedAt ? transaction.deletedAt.toISOString() : null,
+      deletedBy: transaction.deletedByAdmin
+        ? {
+            id: transaction.deletedByAdmin.id,
+            username: transaction.deletedByAdmin.username
+          }
+        : null,
+      lineItems,
+      categoryBreakdown: Object.entries(categoryBreakdown)
+        .map(([category, totals]) => ({
+          category,
+          quantity: totals.quantity,
+          revenue: Number(totals.revenue.toFixed(2))
+        }))
+        .sort((a, b) => b.revenue - a.revenue)
+    };
+  });
+};
+
+adminRouter.post('/transactions/:id/delete', async (req: Request<{ id: string }>, res: Response) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ message: 'Transaction id is required.' });
+  }
+
+  try {
+    const existing = await prisma.purchase.findUnique({
+      where: { id },
+      select: transactionDetailsSelect
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: `Transaction ${id} not found.` });
+    }
+
+    let mutated = existing;
+
+    if (!existing.isDeleted) {
+      const adminId = req.admin?.id && req.admin.id !== 'legacy-admin' ? req.admin.id : null;
+
+      mutated = await prisma.purchase.update({
+        where: { id },
+        data: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          ...(adminId
+            ? {
+                deletedByAdmin: {
+                  connect: { id: adminId }
+                }
+              }
+            : {})
+        },
+        select: transactionDetailsSelect
+      });
+    }
+
+    const [summary] = toTransactionSummary([mutated]);
+
+    return res.json({ transaction: summary });
+  } catch (error) {
+    console.error('Failed to mark transaction as deleted', error);
+    return res.status(500).json({ message: 'Unable to mark transaction as deleted.' });
+  }
+});
+
+adminRouter.get('/transactions', async (req: Request<unknown, unknown, unknown, AdminTransactionsQuery>, res: Response) => {
+  const validation = parseTransactionQuery(req.query);
+  if ('error' in validation) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  const { start, end, categoryFilter, includeDeleted } = validation.data;
+
+  try {
+    const transactions = await prisma.purchase.findMany({
+      where: {
+        ...(includeDeleted ? {} : { isDeleted: false }),
+        createdAt: {
+          gte: start,
+          lt: end
+        },
+        status: {
+          not: 'CANCELLED'
+        },
+        ...(categoryFilter
+          ? {
+              items: {
+                some: {
+                  product: {
+                    category: categoryFilter
+                  }
+                }
+              }
+            }
+          : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      select: transactionDetailsSelect
+    });
+
+    const categories = (await prisma.product.findMany({
+      select: {
+        category: true
+      },
+      distinct: ['category']
+    }))
+      .map((row) => normalizeCategory(row.category))
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .sort((a, b) => a.localeCompare(b));
+
+    res.json({
+      range: {
+        start: start.toISOString(),
+        end: addDaysUtc(end, -1).toISOString().slice(0, 10)
+      },
+      categoryFilter: categoryFilter ?? null,
+      includeDeleted,
+      categories,
+      transactions: toTransactionSummary(transactions as TransactionRow[])
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Unable to load transactions.' });
+  }
+});
+
 app.use('/admin', adminRouter);
 
 const listen = () =>
@@ -949,8 +1568,18 @@ const initialize = async () => {
     try {
       const productCount = await prisma.product.count();
       if (productCount === 0) {
-        await seedDatabase(prisma);
+        const seedResult = await seedDatabase(prisma);
         console.log('Database seeded with mock data on startup.');
+
+        if (seedResult.adminAccount) {
+          if (env.NODE_ENV !== 'production') {
+            console.log(
+              `Created default admin account -> email: ${seedResult.adminAccount.email}, username: ${seedResult.adminAccount.username}, password: ${seedResult.adminAccount.password}`
+            );
+          } else {
+            console.log('Default admin account ensured. Update credentials immediately.');
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to seed database on startup', error);
