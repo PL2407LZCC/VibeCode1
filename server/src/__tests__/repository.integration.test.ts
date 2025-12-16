@@ -5,7 +5,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { seedDatabase } from '../lib/seedData';
+import { seedDatabase } from '../lib/seedData.js';
 
 const TEST_TIMEOUT_MS = 120_000;
 vi.setConfig({ testTimeout: TEST_TIMEOUT_MS, hookTimeout: TEST_TIMEOUT_MS });

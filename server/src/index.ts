@@ -1,9 +1,10 @@
 import express, { type Request, type Response } from 'express';
+import pinoHttpModule from 'pino-http';
 import { Prisma } from '@prisma/client';
 import multer, { MulterError, type FileFilterCallback } from 'multer';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import requireAdmin from './middleware/requireAdmin';
+import requireAdmin from './middleware/requireAdmin.js';
 import {
   listActiveProducts,
   createPurchase,
@@ -12,10 +13,10 @@ import {
   updateProduct,
   updateProductInventory,
   archiveProduct
-} from './repositories/productRepository';
-import { getKioskConfig, setInventoryEnabled } from './repositories/settingsRepository';
-import prisma from './lib/prisma';
-import { seedDatabase } from './lib/seedData';
+} from './repositories/productRepository.js';
+import { getKioskConfig, setInventoryEnabled } from './repositories/settingsRepository.js';
+import prisma from './lib/prisma.js';
+import { seedDatabase } from './lib/seedData.js';
 import {
   ensureUploadsDir,
   UPLOADS_DIR,
@@ -23,21 +24,23 @@ import {
   MAX_UPLOAD_SIZE_BYTES,
   createUploadFilename,
   toPublicUploadPath
-} from './lib/uploads';
-import { env } from './lib/env';
+} from './lib/uploads.js';
+import { env } from './lib/env.js';
 import {
   ADMIN_SESSION_COOKIE,
   clearAdminSessionCookie,
   createAdminSessionToken,
   getSessionTokenFromRequest,
   verifyAdminSessionToken
-} from './lib/adminSession';
+} from './lib/adminSession.js';
 import {
   authenticateWithPassword,
   confirmPasswordReset,
   requestPasswordReset
-} from './services/adminAuthService';
-import { sendPasswordResetEmail } from './services/adminEmailService';
+} from './services/adminAuthService.js';
+import { sendPasswordResetEmail } from './services/adminEmailService.js';
+import { logger } from './lib/logger.js';
+import { httpRequestDuration, metricsRegistry } from './lib/metrics.js';
 import {
   listAdminDirectory,
   issueAdminInvite,
@@ -48,18 +51,36 @@ import {
   acceptAdminInvite,
   AdminDirectoryError,
   AdminInviteAcceptanceError
-} from './services/adminInviteService';
+} from './services/adminInviteService.js';
 import {
   findAdminUserById,
   toPublicAdminUser
-} from './repositories/adminUserRepository';
+} from './repositories/adminUserRepository.js';
+
+const pinoHttp = pinoHttpModule as unknown as typeof import('pino-http').default;
 
 const app = express();
+app.use(pinoHttp({ logger }));
+app.use((req, res, next) => {
+  const end = httpRequestDuration.startTimer({ method: req.method });
+  res.on('finish', () => {
+    const routePath = req.route?.path ?? req.baseUrl + req.path;
+    end({
+      route: routePath,
+      status: res.statusCode.toString()
+    });
+  });
+  next();
+});
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
-const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
+const defaultCorsOrigins = env.NODE_ENV === 'production' ? '' : 'http://localhost:5173,http://127.0.0.1:5173';
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? defaultCorsOrigins)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+if (env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+  logger.warn('CORS_ALLOWED_ORIGINS not configured for production; all cross-origin requests will be rejected.');
+}
 const shouldAutoSeed = (process.env.AUTO_SEED ?? 'true').toLowerCase() !== 'false';
 const secureCookies = env.NODE_ENV === 'production';
 const includeDebugTokens = env.NODE_ENV !== 'production';
@@ -206,6 +227,16 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/metrics', async (_req: Request, res: Response) => {
+  try {
+    res.setHeader('Content-Type', metricsRegistry.contentType);
+    res.send(await metricsRegistry.metrics());
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to render metrics');
+    res.status(500).end();
+  }
+});
+
 app.get('/products', async (_req: Request, res: Response) => {
   try {
     const items = await listActiveProducts();
@@ -247,7 +278,7 @@ app.get('/auth/session', async (req: Request, res: Response) => {
 
     return res.json({ admin: toPublicAdminUser(admin), status: 'VALID' as const });
   } catch (error) {
-    console.error('Failed to resolve admin session', error);
+    logger.error({ err: error }, 'Failed to resolve admin session');
     return res.status(500).json({ message: 'Unable to verify session.' });
   }
 });
@@ -302,7 +333,7 @@ app.post('/auth/login', async (req: Request, res: Response) => {
 
     return res.status(500).json({ message: 'Unable to login.' });
   } catch (error) {
-    console.error('Failed to authenticate admin user', error);
+    logger.error({ err: error }, 'Failed to authenticate admin user');
     return res.status(500).json({ message: 'Unable to login.' });
   }
 });
@@ -342,7 +373,7 @@ app.post('/auth/password-reset/request', async (req: Request, res: Response) => 
 
     return res.status(202).json(responseBody);
   } catch (error) {
-    console.error('Failed to issue password reset token', error);
+    logger.error({ err: error }, 'Failed to issue password reset token');
     return res.status(500).json({ message: 'Unable to process reset request.' });
   }
 });
@@ -372,7 +403,7 @@ app.post('/auth/password-reset/confirm', async (req: Request, res: Response) => 
 
     return res.status(400).json({ message: 'Invalid or expired reset token.' });
   } catch (error) {
-    console.error('Failed to confirm password reset', error);
+    logger.error({ err: error }, 'Failed to confirm password reset');
     return res.status(500).json({ message: 'Unable to complete password reset.' });
   }
 });
@@ -391,7 +422,7 @@ app.post('/auth/invite/preview', async (req: Request, res: Response) => {
     if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to preview admin invite', error);
+    logger.error({ err: error }, 'Failed to preview admin invite');
     return res.status(500).json({ message: 'Unable to preview invite.' });
   }
 });
@@ -413,7 +444,7 @@ app.post('/auth/invite/accept', async (req: Request, res: Response) => {
     if (error instanceof AdminInviteAcceptanceError || error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to accept admin invite', error);
+    logger.error({ err: error }, 'Failed to accept admin invite');
     return res.status(500).json({ message: 'Unable to activate admin account.' });
   }
 });
@@ -426,7 +457,7 @@ app.get('/admin/users', requireAdmin, async (_req: Request, res: Response) => {
     if (error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to load admin directory', error);
+    logger.error({ err: error }, 'Failed to load admin directory');
     return res.status(500).json({ message: 'Unable to load admin directory.' });
   }
 });
@@ -459,7 +490,7 @@ app.post('/admin/users/invite', requireAdmin, async (req: Request, res: Response
     if (error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to issue admin invite', error);
+    logger.error({ err: error }, 'Failed to issue admin invite');
     return res.status(500).json({ message: 'Unable to send invite.' });
   }
 });
@@ -484,7 +515,7 @@ app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request, r
     if (error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to resend admin invite', error);
+    logger.error({ err: error }, 'Failed to resend admin invite');
     return res.status(500).json({ message: 'Unable to resend invite.' });
   }
 });
@@ -499,7 +530,7 @@ app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request, res: R
     if (error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to revoke admin invite', error);
+    logger.error({ err: error }, 'Failed to revoke admin invite');
     return res.status(500).json({ message: 'Unable to revoke invite.' });
   }
 });
@@ -519,7 +550,7 @@ app.patch('/admin/users/:id', requireAdmin, async (req: Request, res: Response) 
     if (error instanceof AdminDirectoryError) {
       return res.status(error.statusCode).json({ message: error.message });
     }
-    console.error('Failed to update admin status', error);
+    logger.error({ err: error }, 'Failed to update admin status');
     return res.status(500).json({ message: 'Unable to update admin account.' });
   }
 });
@@ -1478,7 +1509,7 @@ adminRouter.post('/transactions/:id/delete', async (req: Request<{ id: string }>
 
     return res.json({ transaction: summary });
   } catch (error) {
-    console.error('Failed to mark transaction as deleted', error);
+    logger.error({ err: error }, 'Failed to mark transaction as deleted');
     return res.status(500).json({ message: 'Unable to mark transaction as deleted.' });
   }
 });
@@ -1548,7 +1579,7 @@ app.use('/admin', adminRouter);
 const listen = () =>
   new Promise<void>((resolve) => {
     app.listen(port, () => {
-      console.log(`API listening on http://localhost:${port}`);
+      logger.info(`API listening on http://localhost:${port}`);
       resolve();
     });
   });
@@ -1561,7 +1592,7 @@ const initialize = async () => {
   try {
     await ensureUploadsDir();
   } catch (error) {
-    console.error('Failed to ensure uploads directory', error);
+    logger.error({ err: error }, 'Failed to ensure uploads directory');
   }
 
   if (shouldAutoSeed) {
@@ -1569,27 +1600,32 @@ const initialize = async () => {
       const productCount = await prisma.product.count();
       if (productCount === 0) {
         const seedResult = await seedDatabase(prisma);
-        console.log('Database seeded with mock data on startup.');
+        logger.info('Database seeded with mock data on startup.');
 
         if (seedResult.adminAccount) {
           if (env.NODE_ENV !== 'production') {
-            console.log(
-              `Created default admin account -> email: ${seedResult.adminAccount.email}, username: ${seedResult.adminAccount.username}, password: ${seedResult.adminAccount.password}`
+            logger.info(
+              {
+                email: seedResult.adminAccount.email,
+                username: seedResult.adminAccount.username,
+                password: seedResult.adminAccount.password
+              },
+              'Created default admin account'
             );
           } else {
-            console.log('Default admin account ensured. Update credentials immediately.');
+            logger.info('Default admin account ensured. Update credentials immediately.');
           }
         }
       }
     } catch (error) {
-      console.error('Failed to seed database on startup', error);
+      logger.error({ err: error }, 'Failed to seed database on startup');
     }
   }
 
   try {
     await listen();
   } catch (error) {
-    console.error('Failed to start API server', error);
+    logger.error({ err: error }, 'Failed to start API server');
     process.exitCode = 1;
   }
 };

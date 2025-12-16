@@ -26,6 +26,21 @@ type AdminState = {
     daily: Array<{ date: string; total: number; transactions: number }>;
     weekly: Array<{ weekStart: string; total: number; transactions: number }>;
     topProducts: Array<{ productId: string; title: string; quantity: number; revenue: number }>;
+    productPerformance: ProductPerformanceRecord[];
+  };
+};
+
+type ProductPerformanceRecord = {
+  productId: string;
+  title: string;
+  category: string;
+  isActive: boolean;
+  inventoryCount: number;
+  price: number;
+  sales: {
+    last7Days: { quantity: number; revenue: number };
+    last30Days: { quantity: number; revenue: number };
+    lifetime: { quantity: number; revenue: number };
   };
 };
 
@@ -39,7 +54,7 @@ function createInitialState(): AdminState {
         title: 'House Blend Coffee',
         description: 'Rich medium-roast coffee served hot or iced.',
         price: '2.50',
-  imageUrl: '/house-mix-coffee.jpeg',
+        imageUrl: '/house-mix-coffee.jpeg',
         inventoryCount: 54,
         isActive: true,
         createdAt: '2025-11-01T08:00:00.000Z',
@@ -50,7 +65,7 @@ function createInitialState(): AdminState {
         title: 'Lightning Energy Shot',
         description: 'High-caffeine energy shot for late-night study sessions.',
         price: '3.00',
-  imageUrl: '/lightning-energy-shot.jpeg',
+        imageUrl: '/lightning-energy-shot.jpeg',
         inventoryCount: 40,
         isActive: true,
         createdAt: '2025-11-02T08:00:00.000Z',

@@ -1,4 +1,4 @@
-import prisma from '../lib/prisma';
+import prisma from '../lib/prisma.js';
 
 const DEFAULT_CONFIG = {
   currency: 'EUR' as const,

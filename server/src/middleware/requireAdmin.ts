@@ -4,8 +4,8 @@ import {
   clearAdminSessionCookie,
   getSessionTokenFromRequest,
   verifyAdminSessionToken
-} from '../lib/adminSession';
-import { findAdminUserById, toPublicAdminUser } from '../repositories/adminUserRepository';
+} from '../lib/adminSession.js';
+import { findAdminUserById, toPublicAdminUser } from '../repositories/adminUserRepository.js';
 
 const ADMIN_HEADER = 'x-admin-token';
 

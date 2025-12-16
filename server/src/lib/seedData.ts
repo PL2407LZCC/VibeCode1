@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { hashPassword } from './password';
+import { hashPassword } from './password.js';
 
 type SeedPurchaseItem = {
   productId: string;

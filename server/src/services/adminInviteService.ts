@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { env } from '../lib/env';
+import { env } from '../lib/env.js';
 import {
   createAdminInvite,
   findAdminInviteById,
@@ -9,7 +9,7 @@ import {
   updateAdminInvite,
   type AdminInvitePublic,
   type AdminInviteWithSecrets
-} from '../repositories/adminInviteRepository';
+} from '../repositories/adminInviteRepository.js';
 import {
   createAdminUser,
   findAdminUserByEmail,
@@ -18,10 +18,10 @@ import {
   listAdminUsers,
   toPublicAdminUser,
   updateAdminActiveState
-} from '../repositories/adminUserRepository';
-import { sendAdminInviteEmail } from './adminEmailService';
-import type { AdminUserPublic } from '../repositories/adminUserRepository';
-import { hashPassword, PasswordPolicyError } from '../lib/password';
+} from '../repositories/adminUserRepository.js';
+import { sendAdminInviteEmail } from './adminEmailService.js';
+import type { AdminUserPublic } from '../repositories/adminUserRepository.js';
+import { hashPassword, PasswordPolicyError } from '../lib/password.js';
 
 const INVITE_TOKEN_LENGTH = 32;
 

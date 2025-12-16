@@ -63,7 +63,7 @@ const {
   };
 });
 
-vi.mock('../repositories/productRepository', () => ({
+vi.mock('../repositories/productRepository.js', () => ({
   listActiveProducts: listActiveProductsMock,
   createPurchase: createPurchaseMock,
   listAllProducts: listAllProductsMock,
@@ -73,17 +73,17 @@ vi.mock('../repositories/productRepository', () => ({
   archiveProduct: archiveProductMock
 }));
 
-vi.mock('../repositories/settingsRepository', () => ({
+vi.mock('../repositories/settingsRepository.js', () => ({
   getKioskConfig: getKioskConfigMock,
   setInventoryEnabled: setInventoryEnabledMock
 }));
 
-vi.mock('../lib/prisma', () => ({
+vi.mock('../lib/prisma.js', () => ({
   default: prismaMock
 }));
 
-vi.mock('../services/adminInviteService', async () => {
-  const actual = await vi.importActual<typeof import('../services/adminInviteService')>('../services/adminInviteService');
+vi.mock('../services/adminInviteService.js', async () => {
+  const actual = await vi.importActual<typeof import('../services/adminInviteService.js')>('../services/adminInviteService.js');
   return {
     ...actual,
     listAdminDirectory: listAdminDirectoryMock,
@@ -96,15 +96,15 @@ vi.mock('../services/adminInviteService', async () => {
   };
 });
 
-type ServerModule = typeof import('../index');
+type ServerModule = typeof import('../index.js');
 
 const FIXED_NOW = new Date('2025-11-25T12:00:00Z');
 
 let app!: ServerModule['app'];
 let resetState!: ServerModule['resetState'];
 let uploadsDirAbsolute!: string;
-let AdminDirectoryError!: typeof import('../services/adminInviteService').AdminDirectoryError;
-let AdminInviteAcceptanceError!: typeof import('../services/adminInviteService').AdminInviteAcceptanceError;
+let AdminDirectoryError!: typeof import('../services/adminInviteService.js').AdminDirectoryError;
+let AdminInviteAcceptanceError!: typeof import('../services/adminInviteService.js').AdminInviteAcceptanceError;
 
 const validPayload = {
   items: [
@@ -132,11 +132,11 @@ describe('API routes', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(FIXED_NOW);
 
-    const serverModule: ServerModule = await import('../index');
+    const serverModule: ServerModule = await import('../index.js');
     app = serverModule.app;
     resetState = serverModule.resetState;
 
-    const serviceModule = await import('../services/adminInviteService');
+    const serviceModule = await import('../services/adminInviteService.js');
     AdminDirectoryError = serviceModule.AdminDirectoryError;
     AdminInviteAcceptanceError = serviceModule.AdminInviteAcceptanceError;
   });
