@@ -34,12 +34,13 @@ Use **workflow_dispatch** for ad-hoc builds or tag promotions.
    docker pull <registry>/<namespace>/vibecode-web:<sha>
    ```
 3. Update `docker-compose.production.yml` (or your deployment manifests) to reference the desired tags if not using `:latest`.
-4. Apply database migrations (the API container does this on start unless `SKIP_PRISMA_MIGRATE=true`).
-5. Bring the stack up:
+4. If serving the SPA and API from the same domain, ensure your reverse proxy exposes `/api` to the API container (the provided nginx config already proxies `/api` → `api:3000`) and set `CORS_ALLOWED_ORIGINS` to the public hostname.
+5. Apply database migrations (the API container does this on start unless `SKIP_PRISMA_MIGRATE=true`).
+6. Bring the stack up:
    ```bash
    docker compose -f docker-compose.production.yml up -d
    ```
-6. Monitor logs (`docker compose logs -f api web`) to confirm startup.
+7. Monitor logs (`docker compose logs -f api web`) to confirm startup.
 
 ## 4. Rollback Strategy
 
