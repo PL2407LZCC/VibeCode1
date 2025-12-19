@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import pinoHttpModule from 'pino-http';
 import { Prisma } from '@prisma/client';
 import multer, { MulterError, type FileFilterCallback } from 'multer';
@@ -60,7 +61,36 @@ import {
 const pinoHttp = pinoHttpModule as unknown as typeof import('pino-http').default;
 
 const app = express();
-app.use(pinoHttp({ logger }));
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => {
+      const headerId = req.headers['x-request-id'];
+      if (typeof headerId === 'string' && headerId.trim().length > 0) {
+        return headerId;
+      }
+      if (Array.isArray(headerId) && headerId.length > 0 && headerId[0]) {
+        return headerId[0];
+      }
+      return randomUUID();
+    },
+    serializers: {
+      req(request) {
+        return {
+          id: request.id,
+          method: request.method,
+          url: request.url
+        };
+      },
+      res(response) {
+        return {
+          statusCode: response.statusCode
+        };
+      }
+    },
+    customProps: (req) => ({ requestId: req.id })
+  })
+);
 app.use((req, res, next) => {
   const end = httpRequestDuration.startTimer({ method: req.method });
   res.on('finish', () => {
@@ -223,8 +253,42 @@ app.use(cookieParser(env.ADMIN_SESSION_SECRET));
 app.use(express.json());
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok' });
+app.get('/health', async (_req: Request, res: Response) => {
+  const checks: Record<string, { status: 'ok' | 'degraded' | 'error'; details?: string }> = {};
+  let overallStatus: 'ok' | 'degraded' | 'error' = 'ok';
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = { status: 'ok' };
+  } catch (error) {
+    logger.error({ err: error }, 'Health check failed for database');
+    checks.database = { status: 'error', details: 'Unable to reach database' };
+    overallStatus = 'error';
+  }
+
+  try {
+    await ensureUploadsDir();
+    checks.uploads = { status: 'ok' };
+  } catch (error) {
+    logger.error({ err: error }, 'Health check failed for uploads directory');
+    checks.uploads = { status: 'degraded', details: 'Uploads directory not accessible' };
+    if (overallStatus === 'ok') {
+      overallStatus = 'degraded';
+    }
+  }
+
+  const payload = {
+    status: overallStatus,
+    uptimeSeconds: Math.round(process.uptime()),
+    checks
+  };
+
+  if (overallStatus === 'error') {
+    res.status(503).json(payload);
+    return;
+  }
+
+  res.status(overallStatus === 'degraded' ? 206 : 200).json(payload);
 });
 
 app.get('/metrics', async (_req: Request, res: Response) => {
