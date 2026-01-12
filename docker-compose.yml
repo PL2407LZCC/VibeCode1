@@ -1,7 +1,9 @@
 services:
   api:
     build:
-      context: ./server
+      context: .
+      dockerfile: ./server/Dockerfile
+      target: dev
     command: sh -c "npm run prisma:generate && npm run prisma:migrate:deploy && npm run dev"
     environment:
       NODE_ENV: development
@@ -34,7 +36,9 @@ services:
 
   web:
     build:
-      context: ./client
+      context: .
+      dockerfile: ./client/Dockerfile
+      target: dev
     command: npm run dev -- --host 0.0.0.0 --port 5173
     environment:
       NODE_ENV: development

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
 import { AdminManagementPanel } from './AdminManagementPanel';
 import type { AdminProduct } from '../types';
@@ -22,6 +22,7 @@ type AdminProductRowProps = {
   onStatus: (kind: StatusKind, text: string) => void;
   onArchive: (product: AdminProduct) => void | Promise<void>;
   onUploadImage: (file: File) => Promise<{ url: string; filename: string }>;
+  categoryOptions: string[];
   disabled?: boolean;
 };
 
@@ -76,6 +77,8 @@ const COLLAPSIBLE_SECTION_IDS = {
 
 type CollapsibleSectionKey = keyof typeof COLLAPSIBLE_SECTION_IDS;
 
+const NEW_CATEGORY_OPTION = '__new__';
+
 export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
   const {
     products,
@@ -90,9 +93,20 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
     refresh,
     uploadImage
   } = useAdminDashboard();
+  const categoryOptions = useMemo(() => {
+    const unique = new Set<string>();
+    products.forEach((product) => {
+      const value = product.category?.trim();
+      if (value) {
+        unique.add(value);
+      }
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [products]);
   const [formState, setFormState] = useState<CreateFormState>(INITIAL_FORM);
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isCreateCustomCategory, setIsCreateCustomCategory] = useState(categoryOptions.length === 0);
   const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
     adminManagement: false,
     create: false,
@@ -124,6 +138,30 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
 
     lastRefreshToken.current = refreshToken;
   }, [refreshToken, refresh]);
+
+  useEffect(() => {
+    if (categoryOptions.length === 0) {
+      setIsCreateCustomCategory(true);
+      return;
+    }
+
+    setIsCreateCustomCategory((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const trimmed = formState.category.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      if (categoryOptions.includes(trimmed)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [categoryOptions, formState.category]);
 
   const handleStatus = (kind: StatusKind, text: string) => {
     setStatus({ kind, text });
@@ -174,6 +212,11 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
       return;
     }
 
+    if (isCreateCustomCategory && category.length === 0) {
+      handleStatus('error', 'Enter a category name or pick an existing one.');
+      return;
+    }
+
     try {
       await createProduct({
         title,
@@ -185,6 +228,7 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
         category: category || 'Uncategorized'
       });
       setFormState(INITIAL_FORM);
+      setIsCreateCustomCategory(categoryOptions.length === 0);
       handleStatus('success', 'Product created successfully.');
     } catch (err) {
       handleStatus('error', err instanceof Error ? err.message : 'Failed to create product.');
@@ -232,6 +276,19 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
 
   const toggleSection = (section: CollapsibleSectionKey) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const handleCreateCategorySelection = (event: ChangeEvent<HTMLSelectElement>) => {
+    const { value } = event.target;
+
+    if (value === NEW_CATEGORY_OPTION) {
+      setIsCreateCustomCategory(true);
+      setFormState((prev) => ({ ...prev, category: '' }));
+      return;
+    }
+
+    setIsCreateCustomCategory(false);
+    setFormState((prev) => ({ ...prev, category: value }));
   };
 
   return (
@@ -332,17 +389,54 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
                   </div>
 
                   <div className="admin-form__row">
-                    <label htmlFor={CREATE_FIELD_IDS.category} className="admin-form__label">
+                    <label
+                      htmlFor={categoryOptions.length > 0 ? `${CREATE_FIELD_IDS.category}-select` : CREATE_FIELD_IDS.category}
+                      className="admin-form__label"
+                    >
                       Category
                     </label>
-                    <input
-                      id={CREATE_FIELD_IDS.category}
-                      type="text"
-                      className="admin-form__control"
-                      value={formState.category}
-                      onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
-                      placeholder="Beverages"
-                    />
+                    {categoryOptions.length > 0 ? (
+                      <div className="admin-form__control-group">
+                        <select
+                          id={`${CREATE_FIELD_IDS.category}-select`}
+                          className="admin-form__control"
+                          value={
+                            isCreateCustomCategory
+                              ? NEW_CATEGORY_OPTION
+                              : formState.category || ''
+                          }
+                          onChange={handleCreateCategorySelection}
+                        >
+                          <option value="">Select category...</option>
+                          {categoryOptions.map((categoryName) => (
+                            <option key={categoryName} value={categoryName}>
+                              {categoryName}
+                            </option>
+                          ))}
+                          <option value={NEW_CATEGORY_OPTION}>Add new category...</option>
+                        </select>
+                        {isCreateCustomCategory ? (
+                          <input
+                            id={CREATE_FIELD_IDS.category}
+                            type="text"
+                            className="admin-form__control"
+                            value={formState.category}
+                            onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
+                            placeholder="Enter new category"
+                            aria-label="New category"
+                          />
+                        ) : null}
+                      </div>
+                    ) : (
+                      <input
+                        id={CREATE_FIELD_IDS.category}
+                        type="text"
+                        className="admin-form__control"
+                        value={formState.category}
+                        onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
+                        placeholder="Beverages"
+                      />
+                    )}
                   </div>
 
                   <div className="admin-form__row">
@@ -485,6 +579,7 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
                       onArchive={handleArchiveProduct}
                       onStatus={handleStatus}
                       onUploadImage={uploadImage}
+                      categoryOptions={categoryOptions}
                       disabled={isLoading}
                     />
                   ))
@@ -548,7 +643,15 @@ export function AdminDashboard({ refreshToken }: AdminDashboardProps) {
   );
 }
 
-function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, disabled }: AdminProductRowProps) {
+function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, categoryOptions, disabled }: AdminProductRowProps) {
+  const combinedCategoryOptions = useMemo(() => {
+    const unique = new Set<string>(categoryOptions);
+    const initial = product.category?.trim();
+    if (initial) {
+      unique.add(initial);
+    }
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [categoryOptions, product.category]);
   const [isEditing, setIsEditing] = useState(false);
   const [formState, setFormState] = useState({
     title: product.title,
@@ -560,6 +663,25 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
     category: product.category
   });
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isCustomCategory, setIsCustomCategory] = useState(
+    combinedCategoryOptions.length === 0 || !combinedCategoryOptions.includes(product.category)
+  );
+
+  useEffect(() => {
+    if (combinedCategoryOptions.length === 0) {
+      setIsCustomCategory(true);
+      return;
+    }
+
+    if (isCustomCategory && formState.category && combinedCategoryOptions.includes(formState.category)) {
+      setIsCustomCategory(false);
+      return;
+    }
+
+    if (!isCustomCategory && formState.category && !combinedCategoryOptions.includes(formState.category)) {
+      setIsCustomCategory(true);
+    }
+  }, [combinedCategoryOptions, formState.category, isCustomCategory]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -581,6 +703,11 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
 
     if (!Number.isInteger(inventory) || inventory < 0) {
       onStatus('error', 'Inventory must be a non-negative integer.');
+      return;
+    }
+
+    if (isCustomCategory && category.length === 0) {
+      onStatus('error', 'Enter a category name or pick an existing one.');
       return;
     }
 
@@ -620,6 +747,19 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
       setIsUploadingImage(false);
       event.target.value = '';
     }
+  };
+
+  const handleCategorySelection = (event: ChangeEvent<HTMLSelectElement>) => {
+    const { value } = event.target;
+
+    if (value === NEW_CATEGORY_OPTION) {
+      setIsCustomCategory(true);
+      setFormState((prev) => ({ ...prev, category: '' }));
+      return;
+    }
+
+    setIsCustomCategory(false);
+    setFormState((prev) => ({ ...prev, category: value }));
   };
 
   return (
@@ -676,11 +816,37 @@ function AdminProductRow({ product, onSave, onStatus, onArchive, onUploadImage, 
             </label>
             <label className="admin-field">
               <span>Category</span>
-              <input
-                type="text"
-                value={formState.category}
-                onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
-              />
+              {combinedCategoryOptions.length > 0 ? (
+                <div className="admin-field__control-group">
+                  <select
+                    value={isCustomCategory ? NEW_CATEGORY_OPTION : formState.category || ''}
+                    onChange={handleCategorySelection}
+                  >
+                    <option value="">Select category...</option>
+                    {combinedCategoryOptions.map((categoryName) => (
+                      <option key={categoryName} value={categoryName}>
+                        {categoryName}
+                      </option>
+                    ))}
+                    <option value={NEW_CATEGORY_OPTION}>Add new category...</option>
+                  </select>
+                  {isCustomCategory ? (
+                    <input
+                      type="text"
+                      value={formState.category}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
+                      placeholder="Enter new category"
+                      aria-label="New category"
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={formState.category}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, category: event.target.value }))}
+                />
+              )}
             </label>
             <label className="admin-field">
               <span>Inventory</span>

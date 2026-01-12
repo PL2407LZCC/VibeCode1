@@ -1,6 +1,15 @@
 FROM node:20-alpine AS base
 WORKDIR /usr/src/app
 
+FROM base AS dev
+COPY server/package.json ./package.json
+RUN npm install
+COPY tsconfig.base.json /usr/src/tsconfig.base.json
+COPY server/tsconfig*.json ./
+COPY server/prisma ./prisma
+COPY server/prisma.config.ts ./prisma.config.ts
+RUN npm run prisma:generate
+
 FROM base AS build
 COPY server/package.json ./package.json
 RUN npm install

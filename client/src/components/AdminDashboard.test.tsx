@@ -190,8 +190,7 @@ describe('AdminDashboard', () => {
     await userEvent.type(screen.getByLabelText(/Inventory/i), '12');
     await userEvent.type(screen.getByLabelText(/Description/i), 'Refreshing bubbles');
     await userEvent.type(screen.getByLabelText(/Image URL/i), 'https://example.com/sparkling.png');
-    await userEvent.clear(screen.getByLabelText(/Category/i));
-    await userEvent.type(screen.getByLabelText(/Category/i), 'Beverages');
+    await userEvent.selectOptions(screen.getByLabelText(/^Category$/i), 'Beverages');
 
     await userEvent.click(screen.getByRole('button', { name: /add product/i }));
 
@@ -211,6 +210,35 @@ describe('AdminDashboard', () => {
       expect(screen.getByText(/product created successfully/i)).toBeTruthy();
     });
   }, 10000);
+
+  it('allows adding a product with a new category name', async () => {
+    const state = createDashboardState();
+    useAdminDashboardMock.mockReturnValue(state);
+
+    render(<AdminDashboard />);
+
+    await expandSection(/inventory controls/i);
+
+    await userEvent.type(screen.getByLabelText(/^Title$/i), 'Herbal Tea');
+    await userEvent.type(screen.getByLabelText(/Price/i), '3.20');
+    await userEvent.type(screen.getByLabelText(/Inventory/i), '8');
+    await userEvent.selectOptions(screen.getByLabelText(/^Category$/i), 'Add new category...');
+    await userEvent.type(await screen.findByLabelText(/New category/i), 'Hot Drinks');
+
+    await userEvent.click(screen.getByRole('button', { name: /add product/i }));
+
+    await waitFor(() => {
+      expect(state.createProduct).toHaveBeenCalledWith({
+        title: 'Herbal Tea',
+        description: undefined,
+        price: 3.2,
+        imageUrl: undefined,
+        inventoryCount: 8,
+        isActive: true,
+        category: 'Hot Drinks'
+      });
+    });
+  });
 
   it('archives a product when confirmed', async () => {
     const state = createDashboardState();

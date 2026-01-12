@@ -1154,6 +1154,12 @@ body {
   gap: 0.5rem;
 }
 
+.admin-form__control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 @media (max-width: 720px) {
   .admin-form__row {
     grid-template-columns: 1fr;
@@ -1179,6 +1185,18 @@ body {
   color: var(--color-text);
   width: 100%;
   box-sizing: border-box;
+}
+
+.admin-form__control option {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.admin-form__control option:checked,
+.admin-form__control option:focus,
+.admin-form__control option:hover {
+  color: var(--color-bg);
+  background: var(--color-accent);
 }
 
 .admin-form__control::placeholder {
@@ -1229,7 +1247,8 @@ body {
 }
 
 .admin-field input,
-.admin-field textarea {
+.admin-field textarea,
+.admin-field select {
   border-radius: 10px;
   border: 1px solid var(--color-border);
   padding: 0.65rem 0.75rem;
@@ -1237,6 +1256,24 @@ body {
   font-family: inherit;
   background: rgba(255, 255, 255, 0.05);
   color: var(--color-text);
+}
+
+.admin-field select option {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.admin-field select option:checked,
+.admin-field select option:focus,
+.admin-field select option:hover {
+  color: var(--color-bg);
+  background: var(--color-accent);
+}
+
+.admin-field__control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .admin-field textarea {
