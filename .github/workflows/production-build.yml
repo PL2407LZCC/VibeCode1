@@ -30,8 +30,8 @@ jobs:
       API_IMAGE_NAME: vibecode-api
       WEB_IMAGE_NAME: vibecode-web
       PUSH_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vibecode
-      SHADOW_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vibecode_shadow
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vibecode
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vibecode_shadow
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,8 +50,8 @@ jobs:
 
       - name: Prepare shadow database
         run: |
-          psql postgresql://postgres:postgres@postgres:5432/postgres -c "DROP DATABASE IF EXISTS vibecode_shadow;"
-          psql postgresql://postgres:postgres@postgres:5432/postgres -c "CREATE DATABASE vibecode_shadow;"
+          psql postgresql://postgres:postgres@localhost:5432/postgres -c "DROP DATABASE IF EXISTS vibecode_shadow;"
+          psql postgresql://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE vibecode_shadow;"
 
       - name: Generate Prisma Client
         run: npx prisma generate --schema=server/prisma/schema.prisma
