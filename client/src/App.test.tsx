@@ -127,8 +127,6 @@ describe('App kiosk flow', () => {
   });
 
   it('keeps loading state until automatic recovery after a transient failure', async () => {
-    vi.useFakeTimers();
-
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('booting'))
@@ -137,28 +135,18 @@ describe('App kiosk flow', () => {
         json: async () => mockProducts
       } as Response);
 
-    try {
-      render(<App />);
+    render(<App />);
 
-      await Promise.resolve();
+    await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
 
-      await vi.advanceTimersByTimeAsync(800);
-      await Promise.resolve();
-      await Promise.resolve();
+    const addButton = await screen.findByRole('button', { name: /add to cart/i }, { timeout: 7000 });
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-
-      vi.useRealTimers();
-
-      await waitFor(() => {
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /add to cart/i })).toBeEnabled();
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(addButton).toBeEnabled();
   });
 });

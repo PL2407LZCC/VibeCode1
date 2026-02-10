@@ -53,6 +53,9 @@ jobs:
           psql postgresql://postgres:postgres@localhost:5432/postgres -c "DROP DATABASE IF EXISTS vibecode_shadow;"
           psql postgresql://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE vibecode_shadow;"
 
+      - name: Apply Prisma migrations
+        run: npx prisma migrate deploy --schema=server/prisma/schema.prisma
+
       - name: Generate Prisma Client
         run: npx prisma generate --schema=server/prisma/schema.prisma
 
