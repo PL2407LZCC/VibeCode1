@@ -45,6 +45,9 @@ const resolveImageUrl = (rawUrl: unknown) => {
   }
 };
 
+const normalizeCategory = (value: unknown) =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : 'Uncategorized';
+
 export function useProducts(): ProductsState {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,8 +89,7 @@ export function useProducts(): ProductsState {
             id: item.id,
             title: item.title,
             description: item.description ?? '',
-            category:
-              typeof item.category === 'string' && item.category.trim().length > 0 ? item.category : 'Uncategorized',
+            category: normalizeCategory(item.category),
             price: Number(item.price ?? 0),
             imageUrl: resolveImageUrl(item.imageUrl),
             inventory: Number(item.inventory ?? item.inventoryCount ?? 0)

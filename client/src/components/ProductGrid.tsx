@@ -9,7 +9,7 @@ export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
   const categories = Array.from(
     new Set(
       products
-        .map((product) => product.category.trim())
+        .map((product) => product.category?.trim() ?? '')
         .filter((category) => category.length > 0)
     )
   ).sort((a, b) => a.localeCompare(b));
