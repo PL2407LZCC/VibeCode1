@@ -6,8 +6,25 @@ export type ProductGridProps = {
 };
 
 export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
+  const categories = Array.from(
+    new Set(
+      products
+        .map((product) => product.category.trim())
+        .filter((category) => category.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
   return (
     <section className="product-grid" aria-label="Available products">
+      {categories.length > 0 ? (
+        <ul className="product-category-list" aria-label="Product categories">
+          {categories.map((category) => (
+            <li key={category} className="product-category-list__item">
+              {category}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {products.map((product) => {
         const isOutOfStock = product.inventory <= 0;
 
