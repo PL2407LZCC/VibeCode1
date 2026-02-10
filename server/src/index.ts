@@ -57,6 +57,7 @@ import {
   findAdminUserById,
   toPublicAdminUser
 } from './repositories/adminUserRepository.js';
+import { getTrimmedHeaderValue } from './lib/httpHeaders.js';
 
 const pinoHttp = pinoHttpModule as unknown as typeof import('pino-http').default;
 
@@ -65,12 +66,9 @@ app.use(
   pinoHttp({
     logger,
     genReqId: (req) => {
-      const headerId = req.headers['x-request-id'];
-      if (typeof headerId === 'string' && headerId.trim().length > 0) {
+      const headerId = getTrimmedHeaderValue(req.headers['x-request-id']);
+      if (headerId) {
         return headerId;
-      }
-      if (Array.isArray(headerId) && headerId.length > 0 && headerId[0]) {
-        return headerId[0];
       }
       return randomUUID();
     },
@@ -559,7 +557,7 @@ app.post('/admin/users/invite', requireAdmin, async (req: Request, res: Response
   }
 });
 
-app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request, res: Response) => {
+app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request<{ id: string }>, res: Response) => {
   const inviteId = req.params.id;
 
   try {
@@ -584,7 +582,7 @@ app.post('/admin/users/invites/:id/resend', requireAdmin, async (req: Request, r
   }
 });
 
-app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request, res: Response) => {
+app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request<{ id: string }>, res: Response) => {
   const inviteId = req.params.id;
 
   try {
@@ -599,7 +597,7 @@ app.delete('/admin/users/invites/:id', requireAdmin, async (req: Request, res: R
   }
 });
 
-app.patch('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+app.patch('/admin/users/:id', requireAdmin, async (req: Request<{ id: string }>, res: Response) => {
   const { id } = req.params;
   const { isActive } = req.body as { isActive?: unknown };
 
@@ -774,7 +772,7 @@ adminRouter.post('/products', async (req: Request, res: Response) => {
   }
 });
 
-adminRouter.patch('/products/:id', async (req: Request, res: Response) => {
+adminRouter.patch('/products/:id', async (req: Request<{ id: string }>, res: Response) => {
   const { id } = req.params;
 
   if (!id) {
@@ -851,7 +849,7 @@ adminRouter.patch('/products/:id', async (req: Request, res: Response) => {
   }
 });
 
-adminRouter.patch('/products/:id/inventory', async (req: Request, res: Response) => {
+adminRouter.patch('/products/:id/inventory', async (req: Request<{ id: string }>, res: Response) => {
   const { id } = req.params;
   const { inventoryCount } = req.body as { inventoryCount?: unknown };
 
@@ -873,7 +871,7 @@ adminRouter.patch('/products/:id/inventory', async (req: Request, res: Response)
   }
 });
 
-adminRouter.delete('/products/:id', async (req: Request, res: Response) => {
+adminRouter.delete('/products/:id', async (req: Request<{ id: string }>, res: Response) => {
   const { id } = req.params;
 
   if (!id) {

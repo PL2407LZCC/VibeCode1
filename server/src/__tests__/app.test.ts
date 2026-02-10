@@ -150,6 +150,8 @@ describe('API routes', () => {
       mkdirSync(uploadsDirAbsolute, { recursive: true });
     }
 
+    prismaMock.$queryRaw.mockReset();
+
     listActiveProductsMock.mockResolvedValue([
       {
         id: 'demo-coffee',
@@ -443,7 +445,15 @@ describe('API routes', () => {
     const response = await request(app).get('/health');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: 'ok' });
+    expect(response.body).toMatchObject({
+      status: 'ok',
+      checks: {
+        database: { status: 'ok' },
+        uploads: { status: 'ok' }
+      }
+    });
+    expect(typeof response.body.uptimeSeconds).toBe('number');
+    expect(response.body.uptimeSeconds).toBeGreaterThanOrEqual(0);
   });
 
   it('returns product list via /products', async () => {

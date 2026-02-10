@@ -6,6 +6,7 @@ import {
   verifyAdminSessionToken
 } from '../lib/adminSession.js';
 import { findAdminUserById, toPublicAdminUser } from '../repositories/adminUserRepository.js';
+import { getTrimmedHeaderValue } from '../lib/httpHeaders.js';
 
 const ADMIN_HEADER = 'x-admin-token';
 
@@ -37,11 +38,14 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     }
   }
 
-  const headerToken = req.headers[ADMIN_HEADER] ?? req.headers[ADMIN_HEADER.toLowerCase()];
-  const authHeader = req.headers.authorization;
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const headerTokenRaw = req.headers[ADMIN_HEADER] ?? req.headers[ADMIN_HEADER.toLowerCase()];
+  const headerToken = getTrimmedHeaderValue(headerTokenRaw);
+  const authHeader = getTrimmedHeaderValue(req.headers.authorization);
+  const bearerToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7).trim() || null
+    : null;
 
-  const providedToken = typeof headerToken === 'string' ? headerToken : Array.isArray(headerToken) ? headerToken[0] : bearerToken;
+  const providedToken = headerToken ?? bearerToken;
   const expectedToken = process.env.ADMIN_API_KEY;
 
   if (providedToken && expectedToken && providedToken === expectedToken) {

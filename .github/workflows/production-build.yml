@@ -11,8 +11,8 @@ jobs:
   test-and-build:
     runs-on: ubuntu-latest
     env:
-      REGISTRY: ${{ vars.CONTAINER_REGISTRY || 'ghcr.io' }}
-      IMAGE_NAMESPACE: ${{ vars.CONTAINER_NAMESPACE || 'example' }}
+      REGISTRY: ghcr.io
+      IMAGE_NAMESPACE: ${{ github.repository_owner }}
       API_IMAGE_NAME: vibecode-api
       WEB_IMAGE_NAME: vibecode-web
       PUSH_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -50,8 +50,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build API image
         uses: docker/build-push-action@v6
