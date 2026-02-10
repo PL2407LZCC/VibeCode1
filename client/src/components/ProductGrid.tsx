@@ -6,13 +6,9 @@ export type ProductGridProps = {
 };
 
 export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
-  const categories = Array.from(
-    new Set(
-      products
-        .map((product) => product.category.trim())
-        .filter((category) => category.length > 0)
-    )
-  ).sort((a, b) => a.localeCompare(b));
+  const categories = Array.from(new Set(products.map((product) => product.category))).sort((a, b) =>
+    a.localeCompare(b)
+  );
 
   return (
     <section className="product-grid" aria-label="Available products">
