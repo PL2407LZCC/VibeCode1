@@ -10,12 +10,28 @@ on:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vibecode
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       REGISTRY: ghcr.io
       IMAGE_NAMESPACE: ${{ github.repository_owner }}
       API_IMAGE_NAME: vibecode-api
       WEB_IMAGE_NAME: vibecode-web
       PUSH_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vibecode
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vibecode_shadow
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +44,14 @@ jobs:
 
       - name: Install workspace dependencies
         run: npm ci
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Prepare shadow database
+        run: |
+          psql postgresql://postgres:postgres@postgres:5432/postgres -c "DROP DATABASE IF EXISTS vibecode_shadow;"
+          psql postgresql://postgres:postgres@postgres:5432/postgres -c "CREATE DATABASE vibecode_shadow;"
 
       - name: Generate Prisma Client
         run: npx prisma generate --schema=server/prisma/schema.prisma
@@ -47,7 +71,7 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema-datamodel ./prisma/schema.prisma \
             --exit-code \
-            --shadow-database-url ${{ secrets.SHADOW_DATABASE_URL }}
+            --shadow-database-url ${{ env.SHADOW_DATABASE_URL }}
         working-directory: server
 
       - name: Set up Docker Buildx
