@@ -42,7 +42,12 @@ jobs:
         run: npm run test --workspace client
 
       - name: Check Prisma schema drift
-        run: npx prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --exit-code
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --exit-code \
+            --shadow-database-url ${{ secrets.SHADOW_DATABASE_URL }}
         working-directory: server
 
       - name: Set up Docker Buildx
