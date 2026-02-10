@@ -13,6 +13,7 @@ const FALLBACK_PRODUCTS: Product[] = [
     id: 'demo-coffee',
     title: 'Filter Coffee',
     description: 'Fallback product: refresh to retry.',
+    category: 'Uncategorized',
     price: 2.5,
     imageUrl: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=480&q=80',
     inventory: 0
@@ -43,6 +44,9 @@ const resolveImageUrl = (rawUrl: unknown) => {
     return rawUrl;
   }
 };
+
+const normalizeCategory = (value: unknown) =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : 'Uncategorized';
 
 export function useProducts(): ProductsState {
   const [products, setProducts] = useState<Product[]>([]);
@@ -85,6 +89,7 @@ export function useProducts(): ProductsState {
             id: item.id,
             title: item.title,
             description: item.description ?? '',
+            category: normalizeCategory(item.category),
             price: Number(item.price ?? 0),
             imageUrl: resolveImageUrl(item.imageUrl),
             inventory: Number(item.inventory ?? item.inventoryCount ?? 0)

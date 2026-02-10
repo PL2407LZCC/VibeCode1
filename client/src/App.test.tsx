@@ -40,6 +40,7 @@ const mockProducts = {
       id: 'demo-coffee',
       title: 'Filter Coffee',
       description: 'Fresh brew',
+      category: 'Beverages',
       price: 2.5,
       imageUrl: 'coffee.png',
       inventory: 5
@@ -90,6 +91,8 @@ describe('App kiosk flow', () => {
     });
 
     expect(screen.getByRole('heading', { name: /snack kiosk/i })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /product categories/i })).toBeInTheDocument();
+    expect(screen.getByText('Beverages')).toBeInTheDocument();
 
     const addButton = screen.getByRole('button', { name: /add to cart/i });
     await userEvent.click(addButton);
