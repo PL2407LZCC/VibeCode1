@@ -84,7 +84,7 @@ model PurchaseItem {
 }
 
 model KioskSetting {
-  id                String   @id @default("default")
+  id                String   @id
   createdAt         DateTime @default(now())
   updatedAt         DateTime @default(now()) @updatedAt
   inventoryEnabled  Boolean  @default(true)
@@ -121,6 +121,7 @@ model PasswordResetToken {
   adminUserId  String
 
   @@map("password_reset_tokens")
+  @@index([adminUserId])
 }
 
 model AdminInvite {
