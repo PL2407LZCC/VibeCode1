@@ -26,7 +26,7 @@ jobs:
           --health-retries 5
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAMESPACE: ${{ toLower(github.repository_owner) }}
+      IMAGE_NAMESPACE: pl2407lzcc
       API_IMAGE_NAME: vibecode-api
       WEB_IMAGE_NAME: vibecode-web
       PUSH_IMAGES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
