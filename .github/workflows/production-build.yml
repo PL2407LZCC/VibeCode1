@@ -91,7 +91,8 @@ jobs:
       - name: Build API image
         uses: docker/build-push-action@v6
         with:
-          context: ./server
+          context: .
+          file: server/Dockerfile
           push: ${{ env.PUSH_IMAGES == 'true' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.API_IMAGE_NAME }}:${{ github.sha }}
@@ -100,7 +101,8 @@ jobs:
       - name: Build Web image
         uses: docker/build-push-action@v6
         with:
-          context: ./client
+          context: .
+          file: client/Dockerfile
           push: ${{ env.PUSH_IMAGES == 'true' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.WEB_IMAGE_NAME }}:${{ github.sha }}
