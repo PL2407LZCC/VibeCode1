@@ -88,6 +88,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Ensure client production env file
+        run: |
+          if [ ! -f client/.env.production ]; then
+            printf 'VITE_API_URL=/api\n' > client/.env.production
+          fi
+
       - name: Build API image
         uses: docker/build-push-action@v6
         with:
