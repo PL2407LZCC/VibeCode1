@@ -1,4 +1,4 @@
-import type { AdminUserPublic } from '../repositories/adminUserRepository';
+import type { AdminUserPublic } from '../repositories/adminUserRepository.js';
 
 declare global {
   namespace Express {

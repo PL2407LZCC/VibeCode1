@@ -40,6 +40,7 @@ const mockProducts = {
       id: 'demo-coffee',
       title: 'Filter Coffee',
       description: 'Fresh brew',
+      category: 'Beverages',
       price: 2.5,
       imageUrl: 'coffee.png',
       inventory: 5
@@ -90,6 +91,8 @@ describe('App kiosk flow', () => {
     });
 
     expect(screen.getByRole('heading', { name: /snack kiosk/i })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /product categories/i })).toBeInTheDocument();
+    expect(screen.getByText('Beverages')).toBeInTheDocument();
 
     const addButton = screen.getByRole('button', { name: /add to cart/i });
     await userEvent.click(addButton);
@@ -135,20 +138,15 @@ describe('App kiosk flow', () => {
     render(<App />);
 
     await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
-    await waitFor(
-      () => {
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-      },
-      { timeout: 4500 }
-    );
+    const addButton = await screen.findByRole('button', { name: /add to cart/i }, { timeout: 7000 });
 
-    await waitFor(() => {
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add to cart/i })).toBeEnabled();
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(addButton).toBeEnabled();
   });
 });

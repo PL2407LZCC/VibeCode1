@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { env } from '../lib/env';
+import { env } from '../lib/env.js';
 import {
   createPasswordResetToken,
   deleteResetTokensForUser,
@@ -11,12 +11,12 @@ import {
   consumeResetTokenIfUnused,
   toPublicAdminUser,
   updateAdminAuthenticationState
-} from '../repositories/adminUserRepository';
+} from '../repositories/adminUserRepository.js';
 import type {
   AdminUserPublic,
   AdminUserWithSecrets
-} from '../repositories/adminUserRepository';
-import { hashPassword, PasswordPolicyError, verifyPassword } from '../lib/password';
+} from '../repositories/adminUserRepository.js';
+import { hashPassword, PasswordPolicyError, verifyPassword } from '../lib/password.js';
 
 const MAX_FAILED_ATTEMPTS = 10;
 const RESET_TOKEN_BYTE_LENGTH = 32;

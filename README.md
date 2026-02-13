@@ -35,3 +35,19 @@ GitHub actions only for build
 	- `UPLOADS_DIR`: absolute or relative path to the writable uploads directory.
 	- `UPLOAD_MAX_SIZE_MB`: maximum allowed file size in megabytes (defaults to 5).
 - Development `docker-compose.yml` maps `./server/uploads` into the API container so uploads persist between restarts. Ensure the host path remains writable when running inside Docker Desktop.
+
+## Docker Commands
+
+### Development stack
+
+```sh
+docker compose up --build
+```
+
+### Production stack (local)
+
+```sh
+docker compose -f docker-compose.production.yml up --build -d
+docker compose -f docker-compose.production.yml logs -f api
+docker compose -f docker-compose.production.yml down
+```

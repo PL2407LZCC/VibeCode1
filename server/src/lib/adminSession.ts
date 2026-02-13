@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import type { Request, Response } from 'express';
-import type { AdminUserPublic, AdminUserWithSecrets } from '../repositories/adminUserRepository';
-import { env } from './env';
+import type { AdminUserPublic, AdminUserWithSecrets } from '../repositories/adminUserRepository.js';
+import { env } from './env.js';
 
 export const ADMIN_SESSION_COOKIE = 'admin_session';
 const SESSION_ALGORITHM: jwt.Algorithm = 'HS256';

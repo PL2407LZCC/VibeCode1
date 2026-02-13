@@ -25,7 +25,7 @@ enum AdminInviteStatus {
 model Product {
   id             String                @id @default(cuid())
   createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  updatedAt      DateTime              @default(now()) @updatedAt
   title          String
   description    String?
   price          Decimal               @db.Decimal(10, 2)
@@ -55,7 +55,7 @@ model InventoryAdjustment {
 model Purchase {
   id          String         @id @default(cuid())
   createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  updatedAt   DateTime       @default(now()) @updatedAt
   reference   String         @unique
   status      PurchaseStatus @default(PENDING)
   totalAmount Decimal        @db.Decimal(10, 2)
@@ -84,9 +84,9 @@ model PurchaseItem {
 }
 
 model KioskSetting {
-  id                String   @id @default("default")
+  id                String   @id
   createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  updatedAt         DateTime @default(now()) @updatedAt
   inventoryEnabled  Boolean  @default(true)
 
   @@map("kiosk_settings")
@@ -95,7 +95,7 @@ model KioskSetting {
 model AdminUser {
   id                 String                @id @default(cuid())
   createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  updatedAt          DateTime              @default(now()) @updatedAt
   email              String                @unique
   username           String                @unique
   passwordHash       String
@@ -121,12 +121,13 @@ model PasswordResetToken {
   adminUserId  String
 
   @@map("password_reset_tokens")
+  @@index([adminUserId])
 }
 
 model AdminInvite {
   id               String             @id @default(cuid())
   createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  updatedAt        DateTime           @default(now()) @updatedAt
   email            String
   username         String
   tokenHash        String             @unique

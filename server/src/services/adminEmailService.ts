@@ -1,8 +1,8 @@
 import nodemailer from 'nodemailer';
-import type SMTPTransport from 'nodemailer/lib/smtp-transport';
-import { env } from '../lib/env';
+import type { SentMessageInfo } from 'nodemailer';
+import { env } from '../lib/env.js';
 
-let transporter: nodemailer.Transporter<SMTPTransport.SentMessageInfo> | null = null;
+let transporter: nodemailer.Transporter<SentMessageInfo> | null = null;
 
 const isEmailConfigured = () => Boolean(env.SMTP_HOST && env.SMTP_PORT && env.SMTP_USER && env.SMTP_PASS && env.SMTP_FROM);
 

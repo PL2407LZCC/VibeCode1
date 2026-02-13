@@ -12,6 +12,31 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 type CartState = Record<string, CartLine>;
 
+const determineViewFromLocation = (): 'kiosk' | 'admin' => {
+  if (typeof window === 'undefined') {
+    return 'kiosk';
+  }
+
+  const path = window.location.pathname.toLowerCase();
+  return path.startsWith('/admin') ? 'admin' : 'kiosk';
+};
+
+const readAdminFlowIntent = (): 'invite' | 'reset' | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const path = window.location.pathname.toLowerCase();
+  if (path.startsWith('/admin/invite')) {
+    return 'invite';
+  }
+  if (path.startsWith('/admin/reset')) {
+    return 'reset';
+  }
+
+  return null;
+};
+
 function App() {
   const { products, isLoading, error, refetch } = useProducts();
   const { status: authStatus, admin, logout } = useAdminAuth();
@@ -19,7 +44,7 @@ function App() {
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   const [isProcessingPayment, setProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [view, setView] = useState<'kiosk' | 'admin'>('kiosk');
+  const [view, setView] = useState<'kiosk' | 'admin'>(() => determineViewFromLocation());
   const [adminRefreshToken, setAdminRefreshToken] = useState(0);
   const previousAuthStatus = useRef(authStatus);
 
@@ -147,14 +172,48 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handlePopState = () => {
+      setView(determineViewFromLocation());
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
   const handleSwitchToKiosk = () => {
     setView('kiosk');
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.pathname !== '/') {
+        url.pathname = '/';
+        url.search = '';
+        window.history.pushState(window.history.state, document.title, url.toString());
+      }
+    }
   };
 
   const handleSwitchToAdmin = () => {
     setView('admin');
     if (authStatus === 'authenticated') {
       setAdminRefreshToken((token) => token + 1);
+    }
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const normalizedPath = url.pathname.toLowerCase();
+      if (!normalizedPath.startsWith('/admin')) {
+        url.pathname = '/admin';
+        url.search = '';
+        window.history.pushState(window.history.state, document.title, url.toString());
+      }
     }
   };
 
@@ -171,10 +230,36 @@ function App() {
     previousAuthStatus.current = authStatus;
   }, [authStatus, view]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (authStatus !== 'authenticated') {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const path = url.pathname.toLowerCase();
+    const hasToken = url.searchParams.has('token');
+
+    if (!hasToken && (path.includes('/admin/invite') || path.includes('/admin/reset'))) {
+      url.pathname = '/admin';
+      window.history.replaceState(window.history.state, document.title, url.toString());
+      setView('admin');
+    }
+  }, [authStatus]);
+
   const handleLogout = async () => {
     await logout();
     previousAuthStatus.current = 'unauthenticated';
   };
+
+  const adminFlowIntent = readAdminFlowIntent();
+  const shouldForceInviteFlow = adminFlowIntent === 'invite';
+  const shouldForceResetFlow = adminFlowIntent === 'reset';
+  const shouldRenderAuthPanel =
+    view === 'admin' && (authStatus !== 'authenticated' || shouldForceInviteFlow || shouldForceResetFlow);
 
   return (
     <div className={`app-shell ${view === 'admin' ? 'app-shell--admin' : ''}`}>
@@ -238,6 +323,8 @@ function App() {
             <p className="admin-status" role="status">
               Verifying admin session…
             </p>
+          ) : shouldRenderAuthPanel ? (
+            <AdminAuthPanel />
           ) : authStatus === 'authenticated' ? (
             <AdminDashboard refreshToken={adminRefreshToken} />
           ) : (
